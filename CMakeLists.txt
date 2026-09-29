@@ -1,0 +1,64 @@
+cmake_minimum_required(VERSION 4.3)
+project(thesispromax)
+
+find_package(Vulkan REQUIRED)
+
+set(CMAKE_CXX_STANDARD 23)
+
+include(cmake/fetchSlang.cmake)
+
+add_subdirectory(External/fmt EXCLUDE_FROM_ALL)
+add_subdirectory(External/glm EXCLUDE_FROM_ALL)
+add_subdirectory(External/sdl EXCLUDE_FROM_ALL)
+add_subdirectory(External/vma EXCLUDE_FROM_ALL)
+
+set(CY External/cy/cyCore.h External/cy/cyHairFile.h)
+
+add_executable(exec
+    ${CY}
+    Source/main.cpp
+    Source/Core/Application.hpp
+    Source/Core/Application.cpp
+    Source/Core/ShaderBuild.hpp
+    Source/Core/ShaderBuild.cpp
+    Source/Hair/CyLoader.hpp
+    Source/Hair/CyLoader.cpp
+    Source/Hair/HairGeometry.hpp
+    Source/Hair/HairTypes.hpp
+    Source/Hair/HairGeometrySystem.hpp
+    Source/Hair/HairGeometrySystem.cpp
+    Source/Core/Configuration.hpp
+    Source/Core/Configuration.cpp
+    Source/VulkanRHI/VulkanRHI.hpp
+    Source/VulkanRHI/VulkanRHI.cpp
+    Source/VulkanRHI/vma.impl.cpp
+)
+
+target_link_libraries(exec PUBLIC
+    ${Vulkan_LIBRARIES}
+    fmt
+    glm::glm
+    GPUOpen::VulkanMemoryAllocator
+    SDL3::SDL3
+    slang::slang
+)
+
+target_include_directories(exec PUBLIC
+    ${Vulkan_INCLUDE_DIRS}
+    Source
+    External/cy
+    External/fmt/include
+    External/glm
+    External/imgui
+    External/imgui/backends
+    External/imgui/misc/cpp
+    External/vma/include
+    External/sdl/include
+)
+
+target_compile_definitions(exec PUBLIC
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
+    GLM_ENABLE_EXPERIMENTAL
+    -DImTextureID=ImU64
+    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+)

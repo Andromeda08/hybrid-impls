@@ -1,0 +1,15 @@
+[submodule "External/fmt"]
+	path = External/fmt
+	url = https://github.com/fmtlib/fmt
+[submodule "External/sdl"]
+	path = External/sdl
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "External/glm"]
+	path = External/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "External/vma"]
+	path = External/vma
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "External/imgui"]
+	path = External/imgui
+	url = https://github.com/ocornut/imgui.git
