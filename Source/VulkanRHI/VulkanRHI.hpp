@@ -366,7 +366,10 @@ public:
             return *this;
         }
 
-        [[nodiscard]] std::unique_ptr<Buffer> create(const std::shared_ptr<Device>& device) const;
+        [[nodiscard]] std::unique_ptr<Buffer> create(const std::shared_ptr<Device>& device) const
+        {
+            return std::make_unique<Buffer>(*this, device);
+        }
     };
 
     Buffer(const Builder& b, const std::shared_ptr<Device>& device);
@@ -374,6 +377,11 @@ public:
     ~Buffer()
     {
         vmaDestroyBuffer(mDevice->getAllocator(), mBuffer, mAlloc);
+    }
+
+    void setData(const void* pData, const uint64_t dataSize, const uint64_t offset = 0) const
+    {
+        vmaCopyMemoryToAllocation(mDevice->getAllocator(), pData, mAlloc, offset, dataSize);
     }
 
     [[nodiscard]] void* getMapped() const noexcept

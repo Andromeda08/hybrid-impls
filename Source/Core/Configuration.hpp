@@ -14,6 +14,8 @@ public:
 
     [[nodiscard]] static std::filesystem::path getShaderFilePath(const std::string& shaderFile);
 
+    [[nodiscard]] static std::filesystem::path getHairFilePath(const std::string& fileName);
+
 private:
     Configuration();
 

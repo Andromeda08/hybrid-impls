@@ -29,4 +29,10 @@ std::filesystem::path Configuration::getShaderFilePath(const std::string& shader
     return std::format("{}/{}/{}", config->mBaseDirPath, config->mShadersBinDirName, shaderFile);
 }
 
+std::filesystem::path Configuration::getHairFilePath(const std::string& fileName)
+{
+    const Configuration* config = getInstance();
+    return std::format("{}/{}/{}", config->mBaseDirPath, config->mHairDirName, fileName);
+}
+
 Configuration::Configuration() = default;
