@@ -18,6 +18,12 @@ Application::Application()
 
     mVulkanRHI = std::make_unique<VulkanRHI>(mWindow);
 
+    mCameraSystem = std::make_unique<CameraSystem>(mVulkanRHI.get());
+    mCameraSystem->addCamera<OrbitCamera>();
+
+    const auto [w, h] = mVulkanRHI->getRenderResolution();
+    mCameraSystem->addCamera<FlyingCamera>(glm::ivec2 {w, h}, glm::vec3 { 0.0f, 8.0f, 15.0f });
+
     loadHairFile("a_wWavy");
     initImGui();
 
@@ -48,7 +54,7 @@ void Application::run()
             ImGui_ImplSDL3_ProcessEvent(&event);
             if (!uiWantCaptureInput())
             {
-                // Handle events here
+                mCameraSystem->onEvent(event);
             }
 
             switch (event.type)
@@ -74,6 +80,8 @@ void Application::run()
         const Frame frame = mVulkanRHI->beginFrame();
         auto* pCommandList = frame.pCommandList;
 
+        mCameraSystem->onUpdate(frame);
+
         auto* pImage = mVulkanRHI->getSwapchain()->getTexture(frame.acquiredIndex);
         Barrier()
             .addBarrier(pImage->getBarrier(ImageUsage::Clear))
@@ -97,9 +105,7 @@ void Application::run()
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
                 {
-                    ImGui::Begin("UI Test");
-                    ImGui::Text("hello world");
-                    ImGui::End();
+                    mCameraSystem->onDrawUI();
                 }
                 ImGui::EndFrame();
                 ImGui::Render();

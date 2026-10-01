@@ -38,6 +38,8 @@ add_executable(exec
     Source/VulkanRHI/VulkanRHI.hpp
     Source/VulkanRHI/VulkanRHI.cpp
     Source/VulkanRHI/vma.impl.cpp
+    Source/Hair/Baseline/BaselinePass.hpp
+    Source/Core/Camera.hpp
 )
 
 target_link_libraries(exec PUBLIC
