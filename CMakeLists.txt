@@ -33,8 +33,6 @@ add_executable(exec
     Source/Hair/CyLoader.cpp
     Source/Hair/HairGeometry.hpp
     Source/Hair/HairTypes.hpp
-    Source/Hair/HairGeometrySystem.hpp
-    Source/Hair/HairGeometrySystem.cpp
     Source/Core/Configuration.hpp
     Source/Core/Configuration.cpp
     Source/VulkanRHI/VulkanRHI.hpp

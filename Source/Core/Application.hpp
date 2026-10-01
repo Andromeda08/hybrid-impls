@@ -27,12 +27,6 @@ private:
 
     std::unique_ptr<VulkanRHI>  mVulkanRHI;
 
-    struct
-    {
-        vk::DescriptorPool descriptorPool;
-        vk::PipelineCache  pipelineCache;
-    } mImGui;
-
     HairGeometry                mHairGeometry;
     std::unique_ptr<Buffer>     mHairVertices;
     std::unique_ptr<Buffer>     mHairAttributes;
