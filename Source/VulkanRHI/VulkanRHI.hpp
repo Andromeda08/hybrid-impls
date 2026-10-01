@@ -994,6 +994,13 @@ private:
 
 struct Rendering
 {
+    // Set the command list to be used across the rendering interval.
+    Rendering& usingCommandList(CommandList* pCommandList)
+    {
+        mCommandList = pCommandList;
+        return *this;
+    }
+
     //Set the debug marker region label for the render pass body.
     Rendering& setLabel(const std::string& value);
 
@@ -1003,7 +1010,7 @@ struct Rendering
     // Set the render area with a rect.
     Rendering& setRenderArea(const vk::Rect2D& rect);
 
-    // Add a color or depth attachment to the render pass.
+    // Add a color or depth attachment to the render pass. The last attachment added is used for render area, unless specifed.
     Rendering& addAttachment(
         Texture*                             pImage,
         vk::AttachmentLoadOp                 loadOp     = vk::AttachmentLoadOp::eClear,
@@ -1015,33 +1022,46 @@ struct Rendering
     // Get al the barriers required by the attachments for this render pass.
     [[nodiscard]] Barrier getBarriers();
 
-    // Insert all the barriers required for the attachments.
-    Rendering& insertBarriers(const CommandList* pCommandList);
-
-    // Use the specified render area for viewport and scissor configuration.
-    Rendering& setViewportScissor(const CommandList* pCommandList);
-
     // Execute the render pass with the configured attachments with its body defined in a lambda.
     template<std::invocable<CommandList*> Fn>
-    void execute(CommandList* pCommandList, Fn&& lambda) const
+    void execute(Fn&& lambda, const bool bSetViewport = true, const bool bInsertBarriers = true)
     {
-        pCommandList->beginLabel(mLabel);
+        mCommandList->beginLabel(mLabel);
+
+        if (bSetViewport)
+        {
+            setViewportScissor(mCommandList);
+        }
+        if (bInsertBarriers)
+        {
+            insertBarriers(mCommandList);
+        }
 
         const auto renderingInfo = vk::RenderingInfo()
             .setRenderArea(mRenderArea)
             .setLayerCount(1)
             .setColorAttachments(mAttachmentInfos)
             .setPDepthAttachment(mDepthAttachmentInfo.has_value() ? &(*mDepthAttachmentInfo) : nullptr);
-        pCommandList->getHandle().beginRendering(&renderingInfo);
-        lambda(pCommandList);
-        pCommandList->getHandle().endRendering();
+        mCommandList->getHandle().beginRendering(&renderingInfo);
+        lambda(mCommandList);
+        mCommandList->getHandle().endRendering();
 
-        pCommandList->endLabel();
+        mCommandList->endLabel();
     }
 
 private:
-    std::string                                mLabel;
+    // Insert all the barriers required for the attachments.
+    Rendering& insertBarriers(const CommandList* pCommandList);
+
+    // Use the specified render area for viewport and scissor configuration.
+    Rendering& setViewportScissor(const CommandList* pCommandList);
+
+    CommandList*                               mCommandList = nullptr;
+
+    bool                                       mAutoRenderArea = true;
     vk::Rect2D                                 mRenderArea;
+
+    std::string                                mLabel;
     std::vector<Texture*>                      mImages;
     std::vector<Texture*>                      mResolveImages;
     std::vector<vk::RenderingAttachmentInfo>   mAttachmentInfos;
@@ -1441,6 +1461,11 @@ public:
 
         mFrameCounter++;
         mCurrentFrame = (mCurrentFrame + 1) % gFramesInFlight;
+    }
+
+    [[nodiscard]] const Instance* getInstance() const noexcept
+    {
+        return mInstance.get();
     }
 
     [[nodiscard]] const std::shared_ptr<Device>& getDevice() const noexcept

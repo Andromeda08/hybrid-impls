@@ -14,8 +14,16 @@ add_subdirectory(External/vma EXCLUDE_FROM_ALL)
 
 set(CY External/cy/cyCore.h External/cy/cyHairFile.h)
 
+set("IMGUI_DIR" External/imgui)
+set(IMGUI_FILES
+    ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
+    ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui.h ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+)
+
 add_executable(exec
-    ${CY}
+    ${CY} ${IMGUI_FILES}
     Source/main.cpp
     Source/Core/Application.hpp
     Source/Core/Application.cpp

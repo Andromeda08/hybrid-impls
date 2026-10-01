@@ -2,6 +2,10 @@
 
 #include <print>
 
+#include <imgui.h>
+#include <backends/imgui_impl_sdl3.h>
+#include <backends/imgui_impl_vulkan.h>
+
 #include "Configuration.hpp"
 #include "Hair/CyLoader.hpp"
 
@@ -13,9 +17,23 @@ Application::Application()
     initWindow();
 
     mVulkanRHI = std::make_unique<VulkanRHI>(mWindow);
+
     loadHairFile("a_wWavy");
+    initImGui();
 
     SDL_ShowWindow(mWindow);
+}
+
+Application::~Application()
+{
+    mVulkanRHI->getDevice()->waitIdle();
+
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
+    SDL_DestroyWindow(mWindow);
+    SDL_Quit();
 }
 
 void Application::run()
@@ -27,6 +45,12 @@ void Application::run()
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            if (!uiWantCaptureInput())
+            {
+                // Handle events here
+            }
+
             switch (event.type)
             {
                 case SDL_EVENT_KEY_DOWN: {
@@ -61,6 +85,28 @@ void Application::run()
             vk::ClearColorValue().setFloat32({ 0.1f, 0.1f, 0.5f, 1.0f }),
             pImage->getSubresourceRange());
 
+        // User Interface
+        // =====================================
+        Rendering()
+            .setLabel("ImGui")
+            .usingCommandList(pCommandList)
+            .addAttachment(pImage, vk::AttachmentLoadOp::eLoad)
+            .execute([&](const CommandList* pCmd) -> void
+            {
+                ImGui_ImplVulkan_NewFrame();
+                ImGui_ImplSDL3_NewFrame();
+                ImGui::NewFrame();
+                {
+                    ImGui::Begin("UI Test");
+                    ImGui::Text("hello world");
+                    ImGui::End();
+                }
+                ImGui::EndFrame();
+                ImGui::Render();
+                ImDrawData* drawData = ImGui::GetDrawData();
+                ImGui_ImplVulkan_RenderDrawData(drawData, pCmd->getHandle());
+            });
+
         Barrier()
             .addBarrier(pImage->getBarrier(ImageUsage::PresentSrc))
             .insert(pCommandList);
@@ -83,6 +129,45 @@ void Application::initWindow()
     }
 
     gWindow = mWindow;
+}
+
+void Application::initImGui() const
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    const ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromFileTTF("GeistMono-Regular.ttf", 16.0f);
+    ImGui::StyleColorsDark();
+
+    [[maybe_unused]] auto bResult = ImGui_ImplSDL3_InitForVulkan(mWindow);
+    assert(bResult);
+
+    constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    ImGui_ImplVulkan_InitInfo initInfo = {};
+    initInfo.ApiVersion = VK_API_VERSION_1_4;
+    initInfo.Instance = mVulkanRHI->getInstance()->getHandle();
+    initInfo.PhysicalDevice = mVulkanRHI->getDevice()->getPhysicalDevice();
+    initInfo.Device = mVulkanRHI->getDevice()->getHandle();
+    initInfo.QueueFamily = mVulkanRHI->getDevice()->getGraphicsQueue().familyIndex;
+    initInfo.Queue = mVulkanRHI->getDevice()->getGraphicsQueue().queue;
+    initInfo.PipelineCache = VK_NULL_HANDLE;
+    initInfo.DescriptorPool = VK_NULL_HANDLE;
+    initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;
+    initInfo.MinImageCount = gFramesInFlight;
+    initInfo.ImageCount = gFramesInFlight;
+    initInfo.UseDynamicRendering = true;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .pNext = nullptr,
+        .viewMask = {},
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &format,
+        .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+        .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
+    };
+
+    bResult = ImGui_ImplVulkan_Init(&initInfo);
+    assert(bResult);
 }
 
 void Application::loadHairFile(const std::string& name)
@@ -138,4 +223,10 @@ void Application::loadHairFile(const std::string& name)
     std::println("{}", fmt::format(
         "Loaded Hair model: {}\n\t- Vertices: {}\n\t- Strands: {}",
         name, mHairGeometry.getVertexCount(), mHairGeometry.getStrandCount()));
+}
+
+bool Application::uiWantCaptureInput()
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    return io.WantCaptureMouse || io.WantCaptureKeyboard;
 }

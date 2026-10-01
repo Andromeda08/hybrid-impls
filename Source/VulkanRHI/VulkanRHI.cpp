@@ -283,12 +283,14 @@ Rendering& Rendering::setLabel(const std::string& value)
 
 Rendering& Rendering::setRenderArea(const vk::Extent2D& extent)
 {
+    mAutoRenderArea = false;
     mRenderArea = vk::Rect2D().setExtent(extent).setOffset({0, 0});
     return *this;
 }
 
 Rendering& Rendering::setRenderArea(const vk::Rect2D& rect)
 {
+    mAutoRenderArea = false;
     mRenderArea = rect;
     return *this;
 }
@@ -297,6 +299,11 @@ Rendering& Rendering::addAttachment(
     Texture* pImage, const vk::AttachmentLoadOp loadOp, const vk::AttachmentStoreOp storeOp,
     const std::optional<vk::ClearValue>& clearValue, Texture* pResolve)
 {
+    if (mAutoRenderArea)
+    {
+        setRenderArea(pImage->size);
+    }
+
     const bool isDepth     = vk::hasDepthComponent(pImage->format);
     const auto _clearValue = clearValue.value_or(isDepth
         ? vk::ClearValue().setDepthStencil({1.0f, 0})
