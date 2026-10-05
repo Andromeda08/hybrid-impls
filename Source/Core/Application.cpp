@@ -148,7 +148,7 @@ void Application::initImGui() const
     [[maybe_unused]] auto bResult = ImGui_ImplSDL3_InitForVulkan(mWindow);
     assert(bResult);
 
-    constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    constexpr VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
     ImGui_ImplVulkan_InitInfo initInfo = {};
     initInfo.ApiVersion = VK_API_VERSION_1_4;
     initInfo.Instance = mVulkanRHI->getInstance()->getHandle();
