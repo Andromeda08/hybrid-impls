@@ -738,10 +738,6 @@ public:
 
     ~CommandPool()
     {
-        for (const auto& list : mCommandLists)
-        {
-            free(list.get());
-        }
         mDevice->getHandle().destroy(mCommandPool);
     }
 
@@ -761,10 +757,11 @@ public:
         return pList;
     }
 
-    void free(const CommandList* pCommandList) const
+    void free(const CommandList* pCommandList)
     {
         const auto commandBuffer = pCommandList->getHandle();
         mDevice->getHandle().freeCommandBuffers(mCommandPool, 1, &commandBuffer);
+        std::erase_if(mCommandLists, [pCommandList](const auto& list) { return list.get() == pCommandList; });
     }
 
     void reset() const
