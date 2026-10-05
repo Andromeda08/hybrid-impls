@@ -4,6 +4,7 @@
 
 #include "Camera.hpp"
 #include "Hair/HairGeometry.hpp"
+#include "Hair/Baseline/BaselinePass.hpp"
 #include "VulkanRHI/VulkanRHI.hpp"
 
 class Application
@@ -33,6 +34,10 @@ private:
     std::unique_ptr<Buffer>       mHairVertices;
     std::unique_ptr<Buffer>       mHairAttributes;
     std::unique_ptr<Buffer>       mStrandDescriptions;
+
+    PerFrameArray<std::unique_ptr<Texture>> mDepthBuffers;
+
+    std::unique_ptr<BaselinePass>   mBaselinePass;
 };
 
 extern Application* gApplication;

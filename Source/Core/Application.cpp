@@ -24,8 +24,19 @@ Application::Application()
     const auto [w, h] = mVulkanRHI->getRenderResolution();
     mCameraSystem->addCamera<FlyingCamera>(glm::ivec2 {w, h}, glm::vec3 { 0.0f, 8.0f, 15.0f });
 
+    for (auto&& [i, depthBuffer] : std::views::enumerate(mDepthBuffers))
+    {
+        depthBuffer = Texture::Builder()
+            .setSize(mVulkanRHI->getRenderResolution())
+            .setFormat(vk::Format::eD32Sfloat)
+            .setLabel(fmt::format("DepthBuffer#{}", i))
+            .create(mVulkanRHI->getDevice());
+    }
+
     loadHairFile("a_wWavy");
     initImGui();
+
+    mBaselinePass = std::make_unique<BaselinePass>(&mHairGeometry, mVulkanRHI.get());
 
     SDL_ShowWindow(mWindow);
 }
@@ -92,6 +103,16 @@ void Application::run()
             vk::ImageLayout::eGeneral,
             vk::ClearColorValue().setFloat32({ 0.1f, 0.1f, 0.5f, 1.0f }),
             pImage->getSubresourceRange());
+
+        const auto hairBuffers = HairBuffers
+        {
+            .vertexBuffer            = mHairVertices->getAddress(),
+            .attributesBuffer        = mHairAttributes->getAddress(),
+            .strandDescriptionBuffer = mStrandDescriptions->getAddress(),
+            .cameraBuffer            = mCameraSystem->getBuffer(frame.currentFrame)->getAddress(),
+        };
+
+        mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
 
         // User Interface
         // =====================================

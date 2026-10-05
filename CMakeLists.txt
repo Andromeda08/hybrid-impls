@@ -40,6 +40,7 @@ add_executable(exec
     Source/VulkanRHI/vma.impl.cpp
     Source/Hair/Baseline/BaselinePass.hpp
     Source/Core/Camera.hpp
+    Source/Hair/HairBuffers.hpp
 )
 
 target_link_libraries(exec PUBLIC

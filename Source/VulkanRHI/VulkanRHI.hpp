@@ -673,397 +673,7 @@ private:
     std::vector<std::unique_ptr<Texture>> mTextures;
 };
 
-class CommandList final
-{
-public:
-    CommandList(const vk::CommandBuffer& commandBuffer, const bool isSingleTime)
-    : mHandle(commandBuffer)
-    , mIsSingleTime(isSingleTime)
-    {
-    }
-
-    [[nodiscard]] vk::CommandBuffer getHandle() const noexcept
-    {
-        return mHandle;
-    }
-
-    void begin() const
-    {
-        auto beginInfo = vk::CommandBufferBeginInfo();
-        if (mIsSingleTime)
-        {
-            beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-        }
-        mHandle.begin(beginInfo);
-    }
-
-    void end() const
-    {
-        mHandle.end();
-    }
-
-    void setViewportScissor(const vk::Viewport& viewport, const vk::Rect2D scissor) const
-    {
-        mHandle.setViewport(0, viewport);
-        mHandle.setScissor(0, scissor);
-    }
-
-    void beginLabel(const std::string& name) const
-    {
-        const auto label = vk::DebugUtilsLabelEXT().setPLabelName(name.c_str());
-        mHandle.beginDebugUtilsLabelEXT(label);
-    }
-
-    void endLabel() const
-    {
-        mHandle.endDebugUtilsLabelEXT();
-    }
-
-private:
-    vk::CommandBuffer mHandle;
-    bool              mIsSingleTime = false;
-};
-
-class CommandPool final
-{
-public:
-    CommandPool(const std::shared_ptr<Device>& device, const DeviceQueue& queue)
-    : mDevice(device)
-    {
-        const auto poolCreateInfo = vk::CommandPoolCreateInfo()
-            .setQueueFamilyIndex(queue.familyIndex)
-            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
-        mCommandPool = mDevice->getHandle().createCommandPool(poolCreateInfo);
-    }
-
-    ~CommandPool()
-    {
-        mDevice->getHandle().destroy(mCommandPool);
-    }
-
-    CommandList* allocate()
-    {
-        const auto allocInfo = vk::CommandBufferAllocateInfo()
-            .setCommandBufferCount(1)
-            .setCommandPool(mCommandPool)
-            .setLevel(vk::CommandBufferLevel::ePrimary);
-
-        const auto h = mDevice->getHandle().allocateCommandBuffers(allocInfo);
-
-        auto commandList = std::make_unique<CommandList>(h[0], false);
-        mCommandLists.push_back(std::move(commandList));
-
-        auto* pList = mCommandLists[mCommandLists.size() - 1].get();
-        return pList;
-    }
-
-    void free(const CommandList* pCommandList)
-    {
-        const auto commandBuffer = pCommandList->getHandle();
-        mDevice->getHandle().freeCommandBuffers(mCommandPool, 1, &commandBuffer);
-        std::erase_if(mCommandLists, [pCommandList](const auto& list) { return list.get() == pCommandList; });
-    }
-
-    void reset() const
-    {
-        mDevice->getHandle().resetCommandPool(mCommandPool);
-    }
-
-    [[nodiscard]] vk::CommandPool getHandle() const noexcept
-    {
-        return mCommandPool;
-    }
-
-private:
-    std::shared_ptr<Device>                     mDevice;
-    vk::CommandPool                             mCommandPool;
-    std::vector<std::unique_ptr<CommandList>>   mCommandLists;
-};
-
-class CommandQueue final
-{
-public:
-    CommandQueue(const std::shared_ptr<Device>& device, const DeviceQueue& queue)
-    : mDevice(device)
-    , mQueue(queue)
-    {
-        mImmediatePool = std::make_unique<CommandPool>(mDevice, mQueue);
-    }
-
-    void waitIdle() const
-    {
-        mQueue.queue.waitIdle();
-    }
-
-    void immediate(const std::function<void(CommandList*)>& fn) const
-    {
-        auto* pCmdList = mImmediatePool->allocate();
-
-        pCmdList->begin();
-        fn(pCmdList);
-        pCmdList->end();
-
-        const auto cmdInfo    = vk::CommandBufferSubmitInfo().setCommandBuffer(pCmdList->getHandle());
-        const auto submitInfo = vk::SubmitInfo2().setCommandBufferInfos(cmdInfo);
-        mQueue.queue.submit2(submitInfo, nullptr);
-        waitIdle();
-
-        mImmediatePool->free(pCmdList);
-    }
-
-    [[nodiscard]] std::unique_ptr<CommandPool> spawnPool() const
-    {
-        return std::make_unique<CommandPool>(mDevice, mQueue);
-    }
-
-private:
-    std::shared_ptr<Device>      mDevice;
-    DeviceQueue                  mQueue;
-    std::unique_ptr<CommandPool> mImmediatePool;
-};
-
-class Barrier
-{
-public:
-    Barrier& addBarrier(const vk::BufferMemoryBarrier2& bufferBarrier)
-    {
-        mBufferBarriers.push_back(bufferBarrier);
-        return *this;
-    }
-
-    Barrier& addBarrier(const vk::ImageMemoryBarrier2& imageBarrier)
-    {
-        mImageBarriers.push_back(imageBarrier);
-        return *this;
-    }
-
-    void insert(const CommandList* pCommandList) const
-    {
-        const auto dependencyInfo = vk::DependencyInfo()
-            .setImageMemoryBarriers(mImageBarriers)
-            .setBufferMemoryBarriers(mBufferBarriers);
-        pCommandList->getHandle().pipelineBarrier2(dependencyInfo);
-    }
-
-private:
-    std::vector<vk::BufferMemoryBarrier2>   mBufferBarriers;
-    std::vector<vk::ImageMemoryBarrier2>    mImageBarriers;
-};
-
-struct Frame
-{
-    // Assigned command list
-    CommandList*   pCommandList;
-    // Current in-flight frame index (frameNumber mod FinF)
-    const uint64_t currentFrame;
-    // Lifetime frame number since app start
-    const uint64_t frameNumber;
-    // The swapchain image index for this frame
-    const uint32_t acquiredIndex;
-};
-
-enum class DescriptorHeapType
-{
-    Resource,
-    Sampler,
-};
-
-class DescriptorHeap
-{
-public:
-    explicit DescriptorHeap(
-        const std::shared_ptr<Device>& device,
-        const std::string&             label,
-        const DescriptorHeapType       type = DescriptorHeapType::Resource,
-        const uint32_t                 capacity = 1 << 16)
-    : type(type)
-    , capacity(capacity)
-    , label(label)
-    , mDevice(device)
-    {
-        const auto props = mDevice->getPhysicalDevice()
-            .getProperties2<
-                vk::PhysicalDeviceProperties2,
-                vk::PhysicalDeviceDescriptorHeapPropertiesEXT>()
-            .get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
-
-        vk::DeviceSize heapAlignment = 0;
-        vk::DeviceSize maxHeapSize   = 0;
-
-        if (type == DescriptorHeapType::Resource)
-        {
-            mStride       = alignUp(props.imageDescriptorSize, props.imageDescriptorAlignment);
-            mReservedSize = props.minResourceHeapReservedRange;
-            heapAlignment = props.resourceHeapAlignment;
-            maxHeapSize   = props.maxResourceHeapSize;
-        }
-        else
-        {
-            mStride       = alignUp(props.samplerDescriptorSize, props.samplerDescriptorAlignment);
-            mReservedSize = props.minSamplerHeapReservedRange;
-            heapAlignment = props.samplerHeapAlignment;
-            maxHeapSize   = props.maxSamplerHeapSize;
-        }
-
-        const vk::DeviceSize size = alignUp(mStride * capacity + mReservedSize, heapAlignment);
-        mBuffer = Buffer::Builder()
-            .setSize(size)
-            .setType(BufferType::DescriptorHeap)
-            .setLabel(label)
-            .create(mDevice);
-
-        mMapped = static_cast<std::byte*>(mBuffer->getMapped());
-    }
-
-    ~DescriptorHeap() = default;
-
-    void writeSampledImage(const uint32_t index, const Texture* pTexture) const
-    {
-        writeImage(index, pTexture, vk::DescriptorType::eSampledImage);
-    }
-
-    void writeStorageImage(const uint32_t index, const Texture* pTexture) const
-    {
-        writeImage(index, pTexture, vk::DescriptorType::eStorageImage);
-    }
-
-    void writeSampler(const uint32_t index, const vk::SamplerCreateInfo& info) const
-    {
-        assert(type == DescriptorHeapType::Sampler);
-        mDevice->getHandle().writeSamplerDescriptorsEXT(info, slot(index));
-    }
-
-    void bind(const CommandList* pCommandList) const
-    {
-        vk::BindHeapInfoEXT info{};
-        info.heapRange           = vk::DeviceAddressRangeEXT{mBuffer->getAddress(), mBuffer->size};
-        info.reservedRangeOffset = mBuffer->size - mReservedSize;
-        info.reservedRangeSize   = mReservedSize;
-
-        if (type == DescriptorHeapType::Resource)
-        {
-            pCommandList->getHandle().bindResourceHeapEXT(info);
-        }
-        else
-        {
-            pCommandList->getHandle().bindSamplerHeapEXT(info);
-        }
-    }
-
-    const DescriptorHeapType type;
-    const uint32_t           capacity;
-    const std::string        label;
-
-private:
-    void writeImage(const uint32_t index, const Texture* pTexture, const vk::DescriptorType dType) const
-    {
-        assert(type == DescriptorHeapType::Resource);
-        const auto image = vk::ImageDescriptorInfoEXT()
-            .setLayout(vk::ImageLayout::eGeneral)
-            .setPView(&pTexture->getImageViewCreateInfo());
-        const auto data = vk::ResourceDescriptorDataEXT()
-            .setPImage(&image);
-        const auto info = vk::ResourceDescriptorInfoEXT()
-            .setType(dType)
-            .setData(data);
-
-        const auto dst = slot(index);
-        mDevice->getHandle().writeResourceDescriptorsEXT(info, dst);
-    }
-
-    [[nodiscard]] vk::HostAddressRangeEXT slot(const uint32_t index) const noexcept
-    {
-        return vk::HostAddressRangeEXT()
-            .setAddress(mMapped + index * mStride)
-            .setSize(mStride);
-    }
-
-    std::shared_ptr<Device> mDevice;
-
-    std::unique_ptr<Buffer> mBuffer;
-    std::byte*              mMapped = nullptr;
-    vk::DeviceSize          mStride = 0;
-    vk::DeviceSize          mReservedSize = 0;
-
-};
-
-#pragma region "Rendering and Pipelines"
-
-struct Rendering
-{
-    // Set the command list to be used across the rendering interval.
-    Rendering& usingCommandList(CommandList* pCommandList)
-    {
-        mCommandList = pCommandList;
-        return *this;
-    }
-
-    //Set the debug marker region label for the render pass body.
-    Rendering& setLabel(const std::string& value);
-
-    // Set the render area with an extent, the offset will be set to {0, 0}.
-    Rendering& setRenderArea(const vk::Extent2D& extent);
-
-    // Set the render area with a rect.
-    Rendering& setRenderArea(const vk::Rect2D& rect);
-
-    // Add a color or depth attachment to the render pass. The last attachment added is used for render area, unless specifed.
-    Rendering& addAttachment(
-        Texture*                             pImage,
-        vk::AttachmentLoadOp                 loadOp     = vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp                storeOp    = vk::AttachmentStoreOp::eStore,
-        const std::optional<vk::ClearValue>& clearValue = std::nullopt,
-        Texture*                             pResolve   = nullptr
-    );
-
-    // Get al the barriers required by the attachments for this render pass.
-    [[nodiscard]] Barrier getBarriers();
-
-    // Execute the render pass with the configured attachments with its body defined in a lambda.
-    template<std::invocable<CommandList*> Fn>
-    void execute(Fn&& lambda, const bool bSetViewport = true, const bool bInsertBarriers = true)
-    {
-        mCommandList->beginLabel(mLabel);
-
-        if (bSetViewport)
-        {
-            setViewportScissor(mCommandList);
-        }
-        if (bInsertBarriers)
-        {
-            insertBarriers(mCommandList);
-        }
-
-        const auto renderingInfo = vk::RenderingInfo()
-            .setRenderArea(mRenderArea)
-            .setLayerCount(1)
-            .setColorAttachments(mAttachmentInfos)
-            .setPDepthAttachment(mDepthAttachmentInfo.has_value() ? &(*mDepthAttachmentInfo) : nullptr);
-        mCommandList->getHandle().beginRendering(&renderingInfo);
-        lambda(mCommandList);
-        mCommandList->getHandle().endRendering();
-
-        mCommandList->endLabel();
-    }
-
-private:
-    // Insert all the barriers required for the attachments.
-    Rendering& insertBarriers(const CommandList* pCommandList);
-
-    // Use the specified render area for viewport and scissor configuration.
-    Rendering& setViewportScissor(const CommandList* pCommandList);
-
-    CommandList*                               mCommandList = nullptr;
-
-    bool                                       mAutoRenderArea = true;
-    vk::Rect2D                                 mRenderArea;
-
-    std::string                                mLabel;
-    std::vector<Texture*>                      mImages;
-    std::vector<Texture*>                      mResolveImages;
-    std::vector<vk::RenderingAttachmentInfo>   mAttachmentInfos;
-    std::optional<vk::RenderingAttachmentInfo> mDepthAttachmentInfo = std::nullopt;
-};
+#pragma region "Pipelines"
 
 struct ShaderInfo
 {
@@ -1350,6 +960,417 @@ public:
 };
 
 #pragma endregion
+
+class CommandList final
+{
+public:
+    CommandList(const vk::CommandBuffer& commandBuffer, const bool isSingleTime)
+    : mHandle(commandBuffer)
+    , mIsSingleTime(isSingleTime)
+    {
+    }
+
+    [[nodiscard]] vk::CommandBuffer getHandle() const noexcept
+    {
+        return mHandle;
+    }
+
+    void begin() const
+    {
+        auto beginInfo = vk::CommandBufferBeginInfo();
+        if (mIsSingleTime)
+        {
+            beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+        }
+        mHandle.begin(beginInfo);
+    }
+
+    void end() const
+    {
+        mHandle.end();
+    }
+
+    void setViewportScissor(const vk::Viewport& viewport, const vk::Rect2D scissor) const
+    {
+        mHandle.setViewport(0, viewport);
+        mHandle.setScissor(0, scissor);
+    }
+
+    void beginLabel(const std::string& name) const
+    {
+        const auto label = vk::DebugUtilsLabelEXT().setPLabelName(name.c_str());
+        mHandle.beginDebugUtilsLabelEXT(label);
+    }
+
+    void endLabel() const
+    {
+        mHandle.endDebugUtilsLabelEXT();
+    }
+
+    void bindPipeline(PipelineBase* pPipeline)
+    {
+        mBoundPipeline = pPipeline;
+        mHandle.bindPipeline(pPipeline->getBindPoint(), pPipeline->getHandle());
+    }
+
+    template <class T>
+    void pushData(const T& data)
+    {
+        const auto pushDataInfo = vk::PushDataInfoEXT()
+            .setData(vk::HostAddressRangeConstEXT().setAddress(&data).setSize(sizeof(T)))
+            .setOffset(0);
+        mHandle.pushDataEXT(pushDataInfo);
+    }
+
+    void drawMeshTasks(const uint32_t x = 1, const uint32_t y = 1, const uint32_t z = 1) const
+    {
+        mHandle.drawMeshTasksEXT(x, y, z);
+    }
+
+private:
+    vk::CommandBuffer mHandle;
+    bool              mIsSingleTime  = false;
+    PipelineBase*     mBoundPipeline = nullptr;
+};
+
+class CommandPool final
+{
+public:
+    CommandPool(const std::shared_ptr<Device>& device, const DeviceQueue& queue)
+    : mDevice(device)
+    {
+        const auto poolCreateInfo = vk::CommandPoolCreateInfo()
+            .setQueueFamilyIndex(queue.familyIndex)
+            .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+        mCommandPool = mDevice->getHandle().createCommandPool(poolCreateInfo);
+    }
+
+    ~CommandPool()
+    {
+        mDevice->getHandle().destroy(mCommandPool);
+    }
+
+    CommandList* allocate()
+    {
+        const auto allocInfo = vk::CommandBufferAllocateInfo()
+            .setCommandBufferCount(1)
+            .setCommandPool(mCommandPool)
+            .setLevel(vk::CommandBufferLevel::ePrimary);
+
+        const auto h = mDevice->getHandle().allocateCommandBuffers(allocInfo);
+
+        auto commandList = std::make_unique<CommandList>(h[0], false);
+        mCommandLists.push_back(std::move(commandList));
+
+        auto* pList = mCommandLists[mCommandLists.size() - 1].get();
+        return pList;
+    }
+
+    void free(const CommandList* pCommandList)
+    {
+        const auto commandBuffer = pCommandList->getHandle();
+        mDevice->getHandle().freeCommandBuffers(mCommandPool, 1, &commandBuffer);
+        std::erase_if(mCommandLists, [pCommandList](const auto& list) { return list.get() == pCommandList; });
+    }
+
+    void reset() const
+    {
+        mDevice->getHandle().resetCommandPool(mCommandPool);
+    }
+
+    [[nodiscard]] vk::CommandPool getHandle() const noexcept
+    {
+        return mCommandPool;
+    }
+
+private:
+    std::shared_ptr<Device>                     mDevice;
+    vk::CommandPool                             mCommandPool;
+    std::vector<std::unique_ptr<CommandList>>   mCommandLists;
+};
+
+class CommandQueue final
+{
+public:
+    CommandQueue(const std::shared_ptr<Device>& device, const DeviceQueue& queue)
+    : mDevice(device)
+    , mQueue(queue)
+    {
+        mImmediatePool = std::make_unique<CommandPool>(mDevice, mQueue);
+    }
+
+    void waitIdle() const
+    {
+        mQueue.queue.waitIdle();
+    }
+
+    void immediate(const std::function<void(CommandList*)>& fn) const
+    {
+        auto* pCmdList = mImmediatePool->allocate();
+
+        pCmdList->begin();
+        fn(pCmdList);
+        pCmdList->end();
+
+        const auto cmdInfo    = vk::CommandBufferSubmitInfo().setCommandBuffer(pCmdList->getHandle());
+        const auto submitInfo = vk::SubmitInfo2().setCommandBufferInfos(cmdInfo);
+        mQueue.queue.submit2(submitInfo, nullptr);
+        waitIdle();
+
+        mImmediatePool->free(pCmdList);
+    }
+
+    [[nodiscard]] std::unique_ptr<CommandPool> spawnPool() const
+    {
+        return std::make_unique<CommandPool>(mDevice, mQueue);
+    }
+
+private:
+    std::shared_ptr<Device>      mDevice;
+    DeviceQueue                  mQueue;
+    std::unique_ptr<CommandPool> mImmediatePool;
+};
+
+class Barrier
+{
+public:
+    Barrier& addBarrier(const vk::BufferMemoryBarrier2& bufferBarrier)
+    {
+        mBufferBarriers.push_back(bufferBarrier);
+        return *this;
+    }
+
+    Barrier& addBarrier(const vk::ImageMemoryBarrier2& imageBarrier)
+    {
+        mImageBarriers.push_back(imageBarrier);
+        return *this;
+    }
+
+    void insert(const CommandList* pCommandList) const
+    {
+        const auto dependencyInfo = vk::DependencyInfo()
+            .setImageMemoryBarriers(mImageBarriers)
+            .setBufferMemoryBarriers(mBufferBarriers);
+        pCommandList->getHandle().pipelineBarrier2(dependencyInfo);
+    }
+
+private:
+    std::vector<vk::BufferMemoryBarrier2>   mBufferBarriers;
+    std::vector<vk::ImageMemoryBarrier2>    mImageBarriers;
+};
+
+struct Frame
+{
+    // Assigned command list
+    CommandList*   pCommandList;
+    // Current in-flight frame index (frameNumber mod FinF)
+    const uint64_t currentFrame;
+    // Lifetime frame number since app start
+    const uint64_t frameNumber;
+    // The swapchain image index for this frame
+    const uint32_t acquiredIndex;
+};
+
+enum class DescriptorHeapType
+{
+    Resource,
+    Sampler,
+};
+
+class DescriptorHeap
+{
+public:
+    explicit DescriptorHeap(
+        const std::shared_ptr<Device>& device,
+        const std::string&             label,
+        const DescriptorHeapType       type = DescriptorHeapType::Resource,
+        const uint32_t                 capacity = 1 << 16)
+    : type(type)
+    , capacity(capacity)
+    , label(label)
+    , mDevice(device)
+    {
+        const auto props = mDevice->getPhysicalDevice()
+            .getProperties2<
+                vk::PhysicalDeviceProperties2,
+                vk::PhysicalDeviceDescriptorHeapPropertiesEXT>()
+            .get<vk::PhysicalDeviceDescriptorHeapPropertiesEXT>();
+
+        vk::DeviceSize heapAlignment = 0;
+        vk::DeviceSize maxHeapSize   = 0;
+
+        if (type == DescriptorHeapType::Resource)
+        {
+            mStride       = alignUp(props.imageDescriptorSize, props.imageDescriptorAlignment);
+            mReservedSize = props.minResourceHeapReservedRange;
+            heapAlignment = props.resourceHeapAlignment;
+            maxHeapSize   = props.maxResourceHeapSize;
+        }
+        else
+        {
+            mStride       = alignUp(props.samplerDescriptorSize, props.samplerDescriptorAlignment);
+            mReservedSize = props.minSamplerHeapReservedRange;
+            heapAlignment = props.samplerHeapAlignment;
+            maxHeapSize   = props.maxSamplerHeapSize;
+        }
+
+        const vk::DeviceSize size = alignUp(mStride * capacity + mReservedSize, heapAlignment);
+        mBuffer = Buffer::Builder()
+            .setSize(size)
+            .setType(BufferType::DescriptorHeap)
+            .setLabel(label)
+            .create(mDevice);
+
+        mMapped = static_cast<std::byte*>(mBuffer->getMapped());
+    }
+
+    ~DescriptorHeap() = default;
+
+    void writeSampledImage(const uint32_t index, const Texture* pTexture) const
+    {
+        writeImage(index, pTexture, vk::DescriptorType::eSampledImage);
+    }
+
+    void writeStorageImage(const uint32_t index, const Texture* pTexture) const
+    {
+        writeImage(index, pTexture, vk::DescriptorType::eStorageImage);
+    }
+
+    void writeSampler(const uint32_t index, const vk::SamplerCreateInfo& info) const
+    {
+        assert(type == DescriptorHeapType::Sampler);
+        mDevice->getHandle().writeSamplerDescriptorsEXT(info, slot(index));
+    }
+
+    void bind(const CommandList* pCommandList) const
+    {
+        vk::BindHeapInfoEXT info{};
+        info.heapRange           = vk::DeviceAddressRangeEXT{mBuffer->getAddress(), mBuffer->size};
+        info.reservedRangeOffset = mBuffer->size - mReservedSize;
+        info.reservedRangeSize   = mReservedSize;
+
+        if (type == DescriptorHeapType::Resource)
+        {
+            pCommandList->getHandle().bindResourceHeapEXT(info);
+        }
+        else
+        {
+            pCommandList->getHandle().bindSamplerHeapEXT(info);
+        }
+    }
+
+    const DescriptorHeapType type;
+    const uint32_t           capacity;
+    const std::string        label;
+
+private:
+    void writeImage(const uint32_t index, const Texture* pTexture, const vk::DescriptorType dType) const
+    {
+        assert(type == DescriptorHeapType::Resource);
+        const auto image = vk::ImageDescriptorInfoEXT()
+            .setLayout(vk::ImageLayout::eGeneral)
+            .setPView(&pTexture->getImageViewCreateInfo());
+        const auto data = vk::ResourceDescriptorDataEXT()
+            .setPImage(&image);
+        const auto info = vk::ResourceDescriptorInfoEXT()
+            .setType(dType)
+            .setData(data);
+
+        const auto dst = slot(index);
+        mDevice->getHandle().writeResourceDescriptorsEXT(info, dst);
+    }
+
+    [[nodiscard]] vk::HostAddressRangeEXT slot(const uint32_t index) const noexcept
+    {
+        return vk::HostAddressRangeEXT()
+            .setAddress(mMapped + index * mStride)
+            .setSize(mStride);
+    }
+
+    std::shared_ptr<Device> mDevice;
+
+    std::unique_ptr<Buffer> mBuffer;
+    std::byte*              mMapped = nullptr;
+    vk::DeviceSize          mStride = 0;
+    vk::DeviceSize          mReservedSize = 0;
+
+};
+
+struct Rendering
+{
+    // Set the command list to be used across the rendering interval.
+    Rendering& usingCommandList(CommandList* pCommandList)
+    {
+        mCommandList = pCommandList;
+        return *this;
+    }
+
+    //Set the debug marker region label for the render pass body.
+    Rendering& setLabel(const std::string& value);
+
+    // Set the render area with an extent, the offset will be set to {0, 0}.
+    Rendering& setRenderArea(const vk::Extent2D& extent);
+
+    // Set the render area with a rect.
+    Rendering& setRenderArea(const vk::Rect2D& rect);
+
+    // Add a color or depth attachment to the render pass. The last attachment added is used for render area, unless specifed.
+    Rendering& addAttachment(
+        Texture*                             pImage,
+        vk::AttachmentLoadOp                 loadOp     = vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp                storeOp    = vk::AttachmentStoreOp::eStore,
+        const std::optional<vk::ClearValue>& clearValue = std::nullopt,
+        Texture*                             pResolve   = nullptr
+    );
+
+    // Get al the barriers required by the attachments for this render pass.
+    [[nodiscard]] Barrier getBarriers();
+
+    // Execute the render pass with the configured attachments with its body defined in a lambda.
+    template<std::invocable<CommandList*> Fn>
+    void execute(Fn&& lambda, const bool bSetViewport = true, const bool bInsertBarriers = true)
+    {
+        mCommandList->beginLabel(mLabel);
+
+        if (bSetViewport)
+        {
+            setViewportScissor(mCommandList);
+        }
+        if (bInsertBarriers)
+        {
+            insertBarriers(mCommandList);
+        }
+
+        const auto renderingInfo = vk::RenderingInfo()
+            .setRenderArea(mRenderArea)
+            .setLayerCount(1)
+            .setColorAttachments(mAttachmentInfos)
+            .setPDepthAttachment(mDepthAttachmentInfo.has_value() ? &(*mDepthAttachmentInfo) : nullptr);
+        mCommandList->getHandle().beginRendering(&renderingInfo);
+        lambda(mCommandList);
+        mCommandList->getHandle().endRendering();
+
+        mCommandList->endLabel();
+    }
+
+private:
+    // Insert all the barriers required for the attachments.
+    Rendering& insertBarriers(const CommandList* pCommandList);
+
+    // Use the specified render area for viewport and scissor configuration.
+    Rendering& setViewportScissor(const CommandList* pCommandList);
+
+    CommandList*                               mCommandList = nullptr;
+
+    bool                                       mAutoRenderArea = true;
+    vk::Rect2D                                 mRenderArea;
+
+    std::string                                mLabel;
+    std::vector<Texture*>                      mImages;
+    std::vector<Texture*>                      mResolveImages;
+    std::vector<vk::RenderingAttachmentInfo>   mAttachmentInfos;
+    std::optional<vk::RenderingAttachmentInfo> mDepthAttachmentInfo = std::nullopt;
+};
 
 class VulkanRHI
 {
