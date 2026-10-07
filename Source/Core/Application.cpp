@@ -19,7 +19,7 @@ Application::Application()
     mVulkanRHI = std::make_unique<VulkanRHI>(mWindow);
 
     mCameraSystem = std::make_unique<CameraSystem>(mVulkanRHI.get());
-    mCameraSystem->addCamera<OrbitCamera>();
+    mCameraSystem->addCamera<OrbitCamera>(115.0f);
 
     const auto [w, h] = mVulkanRHI->getRenderResolution();
     mCameraSystem->addCamera<FlyingCamera>(glm::ivec2 {w, h}, glm::vec3 { 0.0f, 8.0f, 15.0f });

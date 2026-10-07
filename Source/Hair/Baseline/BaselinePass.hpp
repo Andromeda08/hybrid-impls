@@ -39,9 +39,10 @@ public:
             .addAttachment(pDepthBuffer)
             .execute([&](CommandList* pCmd) -> void
             {
-                const struct { glm::mat4 model; HairBuffers buffers; } pushData = {
-                    .model   = glm::yawPitchRoll(0.0f, glm::radians(-90.0f), 0.0f),
-                    .buffers = buffers,
+                const struct { glm::mat4 model; HairBuffers buffers; uint32_t strandCount; } pushData = {
+                    .model       = glm::yawPitchRoll(0.0f, glm::radians(-90.0f), 0.0f),
+                    .buffers     = buffers,
+                    .strandCount = mHairGeometry->getStrandCount(),
                 };
                 pCmd->bindPipeline(mPipeline.get());
                 pCmd->pushData(pushData);

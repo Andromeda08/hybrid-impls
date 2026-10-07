@@ -9,6 +9,7 @@ struct PushConstants
     HairAttributes* attributes;
     HairStrandDesc* strandDescriptions;
     GPUCameraData*  camera;
+    uint            strandCount;
 
     HairStrandDesc getStrandDescription(uint globalStrandIndex)
     {
@@ -33,13 +34,13 @@ void taskMain(
     const uint localStrandIndex  = threadIndex;
     const uint globalStrandIndex = baseID + localStrandIndex;
 
-    uint strandletCount        = pc.getStrandDescription(globalStrandIndex).strandletCount;
+    uint strandletCount = (globalStrandIndex < pc.strandCount)
+        ? pc.getStrandDescription(globalStrandIndex).strandletCount
+        : 0;
+
     uint strandWorkgroupOffset = WavePrefixSum(strandletCount);
 
-    if (threadIndex != 0)
-    {
-        taskOut.deltaID[threadIndex] = uint8_t(strandWorkgroupOffset);
-    }
+    taskOut.deltaID[threadIndex] = uint8_t(strandWorkgroupOffset);
     taskOut.baseID = baseID;
 
     GroupMemoryBarrierWithGroupSync();
@@ -48,16 +49,34 @@ void taskMain(
     DispatchMesh(sumStrandletCount, 1, 1, taskOut);
 }
 
-struct MeshData
-{
-    float4 position : SV_Position;
-    float4 worldPosition;
-    float4 worldTangent;
-};
-
 uint getStrandletVertexCount(uint strandletID, uint totalVertexCount)
 {
-    return min(totalVertexCount - (nbl_Hair_Workgroup_Size * strandletID), nbl_Hair_Workgroup_Size);
+    return min(totalVertexCount - (nbl_StrandletStride * strandletID), nbl_Hair_Workgroup_Size);
+}
+
+// Given the mesh workgroup id, resolve the strand and strandlet the current thread is working on.
+void resolveMeshTask(
+        uint    groupId,
+        uint    baseId,
+        uint8_t deltaIds[nbl_Hair_Workgroup_Size],
+    out uint    strandId,
+    out uint    strandletId
+)
+{
+    uint k       = 0;   // Strand ID delta
+    uint deltaId = 0;   // Strandlet ID delta
+    for (uint i = 0; i < nbl_Hair_Workgroup_Size; i++)
+    {
+        if (groupId < uint(deltaIds[i]))
+        {
+            break;
+        }
+        deltaId = uint(deltaIds[i]);
+        k       = i;
+    }
+
+    strandId    = baseId + k;
+    strandletId = groupId - deltaId;
 }
 
 [shader("mesh")]
@@ -65,84 +84,68 @@ uint getStrandletVertexCount(uint strandletID, uint totalVertexCount)
 [outputtopology("triangle")]
 void meshMain(
     // Workgroup
-    uint  threadIndex   : SV_GroupIndex,
-    uint3 groupID       : SV_GroupID,
+    uint  laneId   : SV_GroupIndex,
+    uint3 groupId  : SV_GroupID,
     // Mesh Shader
     in  payload  TaskPayload inPayload,
-    out vertices MeshData    verts[64],
+    out vertices MeshVertex  verts[64],
     out indices  uint3       tris[64]
 )
 {
-    uint workGroupID = groupID.x;
-    uint laneID      = threadIndex;
+    uint strandId, strandletId;
+    resolveMeshTask(groupId.x, inPayload.baseID, inPayload.deltaID, strandId, strandletId);
 
-    uint deltaID = 0;
-    uint k       = 0;
-    for (uint i = 0; i < nbl_Hair_Workgroup_Size; i++)
-    {
-        if (workGroupID < uint(inPayload.deltaID[i]))
-        {
-            break;
-        }
-        deltaID = uint(inPayload.deltaID[i]);
-        k = i;
-    }
+    // Thread [Strand] information
+    HairStrandDesc  strandDesc = pc.getStrandDescription(strandId);
 
-    // Current [Strand] information
-    uint            current_strandID    = inPayload.baseID + k;
-    HairStrandDesc  strand_description  = pc.getStrandDescription(current_strandID);
-    uint            strand_vertex_count = strand_description.vertexCount;
-    uint            base_vertex_offset  = strand_description.firstVertex;
+    // Thread [Strandlet] information
+    uint strandletFirstVertex = strandletId * nbl_StrandletStride;
+    uint strandletVertices    = getStrandletVertexCount(strandletId, strandDesc.vertexCount);
 
-    // Current [Strandlet] information
-    uint strandletID        = workGroupID - deltaID;
-    uint strandlet_vertices = getStrandletVertexCount(strandletID, strand_vertex_count);
+    // Thread specific offset into hair vertex buffers computed from strand & strandlet
+    uint vertexBufferOffset = strandDesc.firstVertex + strandletFirstVertex + laneId;
 
     // Calculate output parameters
-    uint n_quads = strandlet_vertices - 1;
-    uint n_tri   = n_quads * 2;
-    uint n_vtx   = strandlet_vertices * 2;
+    uint quadCount = strandletVertices - 1;
+    SetMeshOutputCounts(strandletVertices * 2, quadCount * 2); // (Vtx, Prim)
 
-    SetMeshOutputCounts(n_vtx, n_tri);
-
-    // Do no work if current lane exceeds quad count
-    if (laneID > n_quads)
+    // Early return for shorter than wg size strandlets
+    if (laneId >= strandletVertices)
     {
         return;
     }
 
-    // Calculate global offset into the vertex buffer
-    uint vertex_buffer_offset = base_vertex_offset + (strandletID * nbl_Hair_Workgroup_Size) + laneID - strandletID;
+    float4 strandVertex = float4(pc.vertices[vertexBufferOffset].position, 1.0);
 
-    float4 strand_vertex = float4(pc.vertices[vertex_buffer_offset].position, 1.0);
-    float4 offset_vertex = strand_vertex + float4(pc.attributes[vertex_buffer_offset].thickness, 0.0, 0.0, 0.0);
-    float4 next_vertex   = float4(pc.vertices[vertex_buffer_offset + 1].position, 1.0);
+    // Tangent is computed from the previous vertex at the last vertex of a strand.
+    bool isStrandEnd = strandletFirstVertex + laneId == strandDesc.vertexCount - 1;
+    float3 T = normalize(isStrandEnd
+        ? pc.vertices[vertexBufferOffset - 1].position - strandVertex.xyz
+        : strandVertex.xyz - pc.vertices[vertexBufferOffset + 1].position);
 
-    float4 tangent = float4(strand_vertex.xyz - next_vertex.xyz, 0.0);
+    // Camera facing quad extrusion
+    float4 wStrandPos   = mul(pc.model, strandVertex);
+    float3 worldTangent = normalize(mul((float3x3) pc.model, T));
 
-    float4 A = (laneID % 2 == 0) ? strand_vertex : offset_vertex;
-    float4 B = (laneID % 2 == 0) ? offset_vertex : strand_vertex;
+    float3 V = normalize(pc.camera.eye.xyz - wStrandPos.xyz);
+    float4 offsetVector = float4(normalize(cross(V, worldTangent)), 0.0);
+    float4 wOffsetPos = wStrandPos + offsetVector * pc.attributes[vertexBufferOffset].thickness;
 
-    var M  = pc.model;
-    var VP = mul(pc.camera.proj, pc.camera.view);
+    float4 A = (laneId % 2 == 0) ? wStrandPos : wOffsetPos;
+    float4 B = (laneId % 2 == 0) ? wOffsetPos : wStrandPos;
 
-    float4 world_pos_A   = mul(M, A);
-    float4 world_pos_B   = mul(M, B);
-    float4 world_tangent = normalize(float4(mul(M, tangent).xyz, 0.0));
+    const var  VP        = pc.camera.getViewProj();
+    const uint outOffset = laneId * 2;
 
-    const uint out_offset = laneID * 2;
+    verts[outOffset + 0] = { mul(VP, A), A.xyz, worldTangent, pc.attributes[vertexBufferOffset].color };
+    verts[outOffset + 1] = { mul(VP, B), B.xyz, worldTangent, pc.attributes[vertexBufferOffset].color };
 
-    verts[out_offset + 0].position      = mul(VP, world_pos_A);
-    verts[out_offset + 0].worldPosition = world_pos_A;
-    verts[out_offset + 0].worldTangent  = world_tangent;
-
-    verts[out_offset + 1].position      = mul(VP, world_pos_B);
-    verts[out_offset + 1].worldPosition = world_pos_B;
-    verts[out_offset + 1].worldTangent  = world_tangent;
-
-    const uint tri_offset = laneID * 2;
-    tris[tri_offset + 0] = uint3(2, 1, 0) + out_offset;
-    tris[tri_offset + 1] = uint3(3, 2, 0) + out_offset;
+    if (laneId < quadCount)
+    {
+        const uint triOffset = laneId * 2;
+        tris[triOffset + 0] = uint3(2, 1, 0) + outOffset;
+        tris[triOffset + 1] = uint3(3, 2, 0) + outOffset;
+    }
 }
 
 float3 kajiyaKay(float3 diffuse, float3 specular, float p, float3 T, float3 L, float3 V)
@@ -152,7 +155,7 @@ float3 kajiyaKay(float3 diffuse, float3 specular, float p, float3 T, float3 L, f
 
     float3 H = normalize(L + V);
     float cosTH = dot(T, H);
-    float sinTH = sqrt(1.0 - cosTH * cosTH);
+    float sinTH = sqrt(max(0.0, 1.0 - cosTH * cosTH));
 
     float3 d = diffuse * sinTL;
     float3 s = specular * pow(max(sinTH, 0.0), p);
@@ -161,13 +164,13 @@ float3 kajiyaKay(float3 diffuse, float3 specular, float p, float3 T, float3 L, f
 }
 
 [shader("fragment")]
-float4 fragMain(MeshData input) : SV_Target
+float4 fragMain(MeshVertex input) : SV_Target
 {
     const float3 lightPos = float3(-75.0, 125.0, 50.0);
 
-    float3 T = normalize(input.worldTangent.xyz);
-    float3 L = normalize(lightPos.xyz - input.worldPosition.xyz);
-    float3 V = normalize(pc.camera.eye.xyz - input.worldPosition.xyz);
+    float3 T = normalize(input.worldTangent);
+    float3 L = normalize(lightPos.xyz - input.worldPosition);
+    float3 V = normalize(pc.camera.eye.xyz - input.worldPosition);
 
     float3 diffuse  = float3(0.32549, 0.23921, 0.20784);
     float3 specular = float3(0.41568, 0.30588, 0.21960);

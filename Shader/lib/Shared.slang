@@ -1,6 +1,7 @@
 #pragma once
 
 static const uint nbl_Hair_Workgroup_Size = 32;
+static const uint nbl_StrandletStride     = nbl_Hair_Workgroup_Size - 1;
 
 struct GPUCameraData
 {
