@@ -3,6 +3,14 @@
 static const uint nbl_Hair_Workgroup_Size = 32;
 static const uint nbl_StrandletStride     = nbl_Hair_Workgroup_Size - 1;
 
+// PCG
+uint hash(uint x)
+{
+    uint state = x * 747796405u + 2891336453u;
+    uint word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
 struct GPUCameraData
 {
     float4x4 view;

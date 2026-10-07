@@ -2,6 +2,26 @@
 
 #include "lib/Shared.slang"
 
+enum ColorMode : uint
+{
+    Model     = 0,
+    Strand    = 1,
+    Strandlet = 2,
+    Quad      = 3,
+}
+
+static const uint nbl_VizColorCount = 12;
+static const float3 colorPool[nbl_VizColorCount] = {
+    float3(234, 118, 203), float3(136,  57, 239), float3(210,  15,  57), float3(230,  69,  83),
+    float3(254, 100,  11), float3(221, 120, 120), float3(223, 142,  29), float3( 64, 160,  43),
+    float3( 23, 146, 153), float3( 32, 159, 181), float3( 30, 102, 245), float3(144, 135, 253),
+};
+
+float3 getColor(uint i)
+{
+    return colorPool[i % nbl_VizColorCount] / 255.0;
+};
+
 struct PushConstants
 {
     float4x4        model;
@@ -10,6 +30,7 @@ struct PushConstants
     HairStrandDesc* strandDescriptions;
     GPUCameraData*  camera;
     uint            strandCount;
+    uint            colorMode;
 
     HairStrandDesc getStrandDescription(uint globalStrandIndex)
     {
@@ -18,6 +39,17 @@ struct PushConstants
     }
 };
 [[vk::push_constant]] PushConstants pc;
+
+float3 getVertexColor(uint strandId, uint strandletId, uint vertexId)
+{
+    switch (ColorMode(pc.colorMode))
+    {
+        case ColorMode::Strand:     return getColor(hash(strandId));
+        case ColorMode::Strandlet:  return getColor(hash(strandId) + strandletId);
+        case ColorMode::Quad:       return getColor(vertexId);
+        default:                    return pc.attributes[vertexId].color;
+    }
+}
 
 groupshared TaskPayload taskOut;
 
@@ -137,8 +169,9 @@ void meshMain(
     const var  VP        = pc.camera.getViewProj();
     const uint outOffset = laneId * 2;
 
-    verts[outOffset + 0] = { mul(VP, A), A.xyz, worldTangent, pc.attributes[vertexBufferOffset].color };
-    verts[outOffset + 1] = { mul(VP, B), B.xyz, worldTangent, pc.attributes[vertexBufferOffset].color };
+    float3 color = getVertexColor(strandId, strandletId, vertexBufferOffset);
+    verts[outOffset + 0] = { mul(VP, A), A.xyz, worldTangent, color };
+    verts[outOffset + 1] = { mul(VP, B), B.xyz, worldTangent, color };
 
     if (laneId < quadCount)
     {
@@ -175,6 +208,9 @@ float4 fragMain(MeshVertex input) : SV_Target
     float3 diffuse  = float3(0.32549, 0.23921, 0.20784);
     float3 specular = float3(0.41568, 0.30588, 0.21960);
 
-    float3 color = kajiyaKay(diffuse, specular, 16.0, T, L, V);
+    float3 color = pc.colorMode == ColorMode::Model
+        ? kajiyaKay(input.color, input.color, 16.0, T, L, V)
+        : input.color;
+
     return float4(color, 1.0);
 }

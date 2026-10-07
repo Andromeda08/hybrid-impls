@@ -101,7 +101,7 @@ void Application::run()
         pCommandList->getHandle().clearColorImage(
             pImage->getHandle(),
             vk::ImageLayout::eGeneral,
-            vk::ClearColorValue().setFloat32({ 0.1f, 0.1f, 0.5f, 1.0f }),
+            vk::ClearColorValue().setFloat32({ 0.0f, 0.005f, 0.01f, 1.0f }),
             pImage->getSubresourceRange());
 
         const auto hairBuffers = HairBuffers
@@ -127,6 +127,7 @@ void Application::run()
                 ImGui::NewFrame();
                 {
                     mCameraSystem->onDrawUI();
+                    mBaselinePass->onDrawUI();
                 }
                 ImGui::EndFrame();
                 ImGui::Render();
