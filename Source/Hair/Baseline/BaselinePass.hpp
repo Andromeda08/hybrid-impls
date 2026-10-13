@@ -8,16 +8,17 @@
 
 #include "Hair/HairBuffers.hpp"
 #include "Hair/HairGeometry.hpp"
+#include "Hair/HairRendererParams.hpp"
 #include "VulkanRHI/VulkanRHI.hpp"
 
 class BaselinePass
 {
 public:
-    explicit BaselinePass(HairGeometry* pHairGeometry, VulkanRHI* pRHI)
+    explicit BaselinePass(HairRendererParams* pParams, VulkanRHI* pRHI)
     : mVulkanRHI(pRHI)
-    , mHairGeometry(pHairGeometry)
+    , mParams(pParams)
     {
-        assert(mHairGeometry && mVulkanRHI);
+        assert(mParams && mVulkanRHI);
         const auto graphicsPS = GraphicsPS()
             .addDefaultAttachmentState(1)
             .addAttachmentFormat(vk::Format::eB8G8R8A8Unorm)
@@ -45,55 +46,17 @@ public:
                 const struct { glm::mat4 model; HairBuffers buffers; uint32_t strandCount; uint32_t colorMode; } pushData = {
                     .model       = glm::yawPitchRoll(0.0f, glm::radians(-90.0f), 0.0f),
                     .buffers     = buffers,
-                    .strandCount = mRenderNStrands ? mStrandCountOverride : mHairGeometry->getStrandCount(),
-                    .colorMode   = mColorMode,
+                    .strandCount = static_cast<uint32_t>(mParams->mStrandCount),
+                    .colorMode   = std::to_underlying(mParams->mColorMode),
                 };
                 pCmd->bindPipeline(mPipeline.get());
                 pCmd->pushData(pushData);
-                pCmd->drawMeshTasks(mHairGeometry->taskGroupSizeX);
+                pCmd->drawMeshTasks(mParams->mHairGeometry->taskGroupSizeX);
             });
-    }
-
-    void onDrawUI()
-    {
-        static constexpr std::array colorModeNames = { "Model", "Strand", "Strandlet", "Quad" };
-
-        ImGui::Begin("Baseline Pass");
-
-        ImGui::SeparatorText("Color Mode");
-        if (ImGui::BeginCombo("##ColorModeSelect", colorModeNames[mColorMode]))
-        {
-            for (const auto& [i, name] : std::views::enumerate(colorModeNames))
-            {
-                const bool isSelected = i == mColorMode;
-
-                if (ImGui::Selectable(name, isSelected))
-                {
-                    mColorMode = static_cast<uint32_t>(i);
-                }
-                if (isSelected)
-                {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-
-            ImGui::EndCombo();
-        }
-
-        ImGui::Separator();
-        ImGui::Checkbox("Override strand count", &mRenderNStrands);
-        ImGui::DragInt("N", &mStrandCountOverride,10, 0, static_cast<int32_t>(mHairGeometry->getStrandCount()));
-
-        ImGui::End();
     }
 
 private:
     VulkanRHI*                        mVulkanRHI;
-    HairGeometry*                     mHairGeometry;
+    HairRendererParams*               mParams;
     std::unique_ptr<GraphicsPipeline> mPipeline;
-
-    uint32_t mColorMode = 0;
-
-    bool    mRenderNStrands      = false;
-    int32_t mStrandCountOverride = 0;
 };

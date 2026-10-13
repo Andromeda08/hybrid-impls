@@ -1,0 +1,101 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <string_view>
+
+#include <imgui.h>
+#include <ranges>
+
+#include "HairGeometry.hpp"
+
+enum class HairVisMode : uint32_t
+{
+    Model       = 0,
+    Strand      = 1,
+    Strandlet   = 2,
+    Quad        = 3,
+};
+
+[[nodiscard]] constexpr std::string_view toString(const HairVisMode e) noexcept
+{
+    using enum HairVisMode;
+    switch (e)
+    {
+        case Model:     return "Model";
+        case Strand:    return "Strand";
+        case Strandlet: return "Strandlet";
+        case Quad:      return "Quad";
+    }
+    std::unreachable();
+}
+
+struct HairRendererParams
+{
+    HairGeometry*   mHairGeometry = nullptr;
+
+    HairVisMode     mColorMode      = HairVisMode::Model;
+    int32_t         mStrandCount    = 0;
+    bool            mForceThickness = false;
+    float           mThickness      = 0.25f;
+
+    explicit HairRendererParams(HairGeometry* pHairGeometry)
+    : mHairGeometry(pHairGeometry)
+    {
+        mStrandCount = static_cast<int32_t>(mHairGeometry->getStrandCount());
+    }
+
+    void onDrawUI()
+    {
+        using enum HairVisMode;
+        static constexpr std::array sVisModeNames = {
+            toString(Model), toString(Strand), toString(Strandlet), toString(Quad)
+        };
+
+        ImGui::Begin("Hair Renderer");
+
+        ImGui::SeparatorText("Hair Stats");
+        ImGui::Text("Vertices   : %u", mHairGeometry->getVertexCount());
+        ImGui::Text("Strands    : %u", mHairGeometry->getStrandCount());
+        ImGui::Text("Strandlets : %llu", mHairGeometry->strandlets.size());
+
+        ImGui::SeparatorText("Strand Count");
+
+        if (ImGui::Button("10"))
+        {
+            mStrandCount = 10;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Max"))
+        {
+            mStrandCount = static_cast<int32_t>(mHairGeometry->getStrandCount());
+        }
+
+        ImGui::DragInt("N", &mStrandCount, 10, 0, static_cast<int32_t>(mHairGeometry->getStrandCount()));
+
+        ImGui::SeparatorText("Color");
+        if (ImGui::BeginCombo("##ColorSelect", sVisModeNames[std::to_underlying(mColorMode)].data()))
+        {
+            for (auto&& [i, name] : std::views::enumerate(sVisModeNames))
+            {
+                const bool isSelected = std::to_underlying(mColorMode) == i;
+                if (ImGui::Selectable(name.data(), isSelected))
+                {
+                    mColorMode = static_cast<HairVisMode>(i);
+                }
+                if (isSelected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::SeparatorText("Thickness");
+        ImGui::Checkbox("Force", &mForceThickness);
+        ImGui::SameLine();
+        ImGui::DragFloat("##Thickness", &mThickness, 0.05f, 0.0f, 1.0f);
+
+        ImGui::End();
+    }
+};

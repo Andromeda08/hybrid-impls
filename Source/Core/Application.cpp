@@ -9,6 +9,7 @@
 #include "Configuration.hpp"
 #include "Hair/CyLoader.hpp"
 
+
 Application* gApplication = nullptr;
 SDL_Window*  gWindow      = nullptr;
 
@@ -36,7 +37,8 @@ Application::Application()
     loadHairFile("a_wWavy");
     initImGui();
 
-    mBaselinePass = std::make_unique<BaselinePass>(&mHairGeometry, mVulkanRHI.get());
+    mHairRendererParams = std::make_unique<HairRendererParams>(&mHairGeometry);
+    mBaselinePass = std::make_unique<BaselinePass>(mHairRendererParams.get(), mVulkanRHI.get());
 
     SDL_ShowWindow(mWindow);
 }
@@ -127,7 +129,7 @@ void Application::run()
                 ImGui::NewFrame();
                 {
                     mCameraSystem->onDrawUI();
-                    mBaselinePass->onDrawUI();
+                    mHairRendererParams->onDrawUI();
                 }
                 ImGui::EndFrame();
                 ImGui::Render();

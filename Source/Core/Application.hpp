@@ -4,6 +4,7 @@
 
 #include "Camera.hpp"
 #include "Hair/HairGeometry.hpp"
+#include "Hair/HairRendererParams.hpp"
 #include "Hair/Baseline/BaselinePass.hpp"
 #include "VulkanRHI/VulkanRHI.hpp"
 
@@ -37,7 +38,8 @@ private:
 
     PerFrameArray<std::unique_ptr<Texture>> mDepthBuffers;
 
-    std::unique_ptr<BaselinePass>   mBaselinePass;
+    std::unique_ptr<HairRendererParams> mHairRendererParams;
+    std::unique_ptr<BaselinePass>       mBaselinePass;
 };
 
 extern Application* gApplication;
