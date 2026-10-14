@@ -37,6 +37,7 @@ Application::Application()
     loadHairFile("a_wWavy");
     initImGui();
 
+    mProfiler = std::make_unique<GPUProfiler>(mVulkanRHI.get());
     mHairRendererParams = std::make_unique<HairRendererParams>(&mHairGeometry);
     mBaselinePass = std::make_unique<BaselinePass>(mHairRendererParams.get(), mVulkanRHI.get());
 
@@ -114,7 +115,11 @@ void Application::run()
             .cameraBuffer            = mCameraSystem->getBuffer(frame.currentFrame)->getAddress(),
         };
 
-        mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
+        mProfiler->beginQuery(pCommandList, frame.currentFrame);
+        {
+            mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
+        }
+        mProfiler->endQuery(pCommandList, frame.currentFrame);
 
         // User Interface
         // =====================================
@@ -128,6 +133,26 @@ void Application::run()
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
                 {
+                    ImGui::Begin("Benchmark");
+                    {
+                        ImGui::Text("Pipeline time: %f", mProfiler->lastGpuMS);
+                        ImGui::Text("Primitives: %llu", mProfiler->lastMeshPrims);
+
+                        ImGui::BeginDisabled(mProfiler->isCapturing());
+                        if (ImGui::Button("Start Capture"))
+                        {
+                            mProfiler->startCapture();
+                        }
+                        ImGui::EndDisabled();
+
+                        if (mProfiler->isCapturing())
+                        {
+                            ImGui::SameLine();
+                            ImGui::Text("Progress: %llu / %llu", mProfiler->getCaptureFrame(), GPUProfiler::sCaptureFrames);
+                        }
+                    }
+                    ImGui::End();
+
                     mCameraSystem->onDrawUI();
                     mHairRendererParams->onDrawUI();
                 }

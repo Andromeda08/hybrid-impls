@@ -42,6 +42,8 @@ add_executable(exec
     Source/Core/Camera.hpp
     Source/Hair/HairBuffers.hpp
     Source/Hair/HairRendererParams.hpp
+    Source/Hair/Baseline/BaselinePass.cpp
+    Source/Core/GPUProfiler.hpp
 )
 
 target_link_libraries(exec PUBLIC
