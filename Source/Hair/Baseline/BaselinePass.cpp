@@ -1,5 +1,9 @@
 #include "BaselinePass.hpp"
 
+#include <glm/glm.hpp>
+#include <glm/gtx/euler_angles.hpp>
+#include "Hair/HairGeometry.hpp"
+
 BaselinePass::BaselinePass(HairRendererParams* pParams, VulkanRHI* pRHI)
 : mVulkanRHI(pRHI)
 , mParams(pParams)

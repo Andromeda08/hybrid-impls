@@ -399,6 +399,19 @@ public:
         return mBuffer;
     }
 
+    [[nodiscard]] vk::BufferMemoryBarrier2 getBarrier(const BufferUsage srcUsage, const BufferUsage dstUsage) const noexcept
+    {
+        const auto [ srcAccess, srcStage ] = getBarrierFlagsForBufferUsage(srcUsage);
+        const auto [ dstAccess, dstStage ] = getBarrierFlagsForBufferUsage(dstUsage);
+        return vk::BufferMemoryBarrier2()
+            .setBuffer(mBuffer)
+            .setSize(VK_WHOLE_SIZE)
+            .setSrcAccessMask(srcAccess)
+            .setDstAccessMask(dstAccess)
+            .setSrcStageMask(srcStage)
+            .setDstStageMask(dstStage);
+    }
+
     const uint64_t    size;
     const BufferType  type;
     const std::string label;
@@ -425,11 +438,75 @@ private:
         }
     }
 
-    struct TrackedState
+    [[nodiscard]] static constexpr std::pair<vk::AccessFlags2, vk::PipelineStageFlags2> getBarrierFlagsForBufferUsage(const BufferUsage bufferUsage)
     {
-        vk::AccessFlags2        accessMask = vk::AccessFlagBits2::eNone;
-        vk::PipelineStageFlags2 stageMask  = vk::PipelineStageFlagBits2::eNone;
-    } mState;
+        using A = vk::AccessFlagBits2;
+        using S = vk::PipelineStageFlagBits2;
+
+        using enum BufferUsage;
+        switch (bufferUsage)
+        {
+            case Compute: {
+                return { A::eShaderRead | A::eShaderWrite, S::eComputeShader | S::eMeshShaderEXT | S::eTaskShaderEXT };
+            }
+            case Compute_Read: {
+                return { A::eShaderRead, S::eComputeShader | S::eMeshShaderEXT | S::eTaskShaderEXT };
+            }
+            case Compute_Write: {
+                return { A::eShaderWrite, S::eComputeShader | S::eMeshShaderEXT | S::eTaskShaderEXT };
+            }
+            case Fragment: {
+                return { A::eShaderRead, S::eFragmentShader};
+            }
+            case Fragment_ReadWrite: {
+                return { A::eShaderRead | A::eShaderWrite, S::eFragmentShader};
+            }
+            case AS_BuildUpdate: {
+                return { A::eAccelerationStructureWriteKHR, S::eAccelerationStructureBuildKHR | S::eAccelerationStructureCopyKHR };
+            }
+            case AS_BuildInput: {
+                return { A::eShaderRead, S::eAccelerationStructureBuildKHR };
+            }
+            case AS_Traverse: {
+                return { A::eAccelerationStructureReadKHR, S::eAllGraphics | S::eComputeShader | S::eRayTracingShaderKHR | S::eAccelerationStructureBuildKHR };
+            }
+            case SBT_Read: {
+                return { A::eShaderBindingTableReadKHR, S::eAllGraphics };
+            }
+            case TransferSrc: {
+                return { A::eTransferRead, S::eAllTransfer };
+            }
+            case TransferDst: {
+                return { A::eTransferWrite, S::eAllTransfer };
+            }
+            case DrawIndirect: {
+                return { A::eIndirectCommandRead, S::eDrawIndirect };
+            }
+            case ComputeIndirect: {
+                return { A::eIndirectCommandRead, S::eComputeShader };
+            }
+            case Vertex: {
+                return { A::eVertexAttributeRead, S::eVertexInput };
+            }
+            case Index: {
+                return { A::eIndexRead, S::eVertexInput };
+            }
+            case StorageRead: {
+                return { A::eShaderRead | A::eShaderStorageRead, S::eAllGraphics };
+            }
+            case Host_Read: {
+                return { A::eHostRead, S::eHost };
+            }
+            case Host_Write: {
+                return { A::eHostWrite, S::eHost };
+            }
+            case All: {
+                return { A::eShaderWrite | A::eShaderRead | A::eTransferRead | A::eTransferWrite, S::eAllCommands };
+            }
+        }
+
+        std::unreachable();
+    }
 
     std::shared_ptr<Device> mDevice;
     vk::Buffer              mBuffer;
@@ -1022,10 +1099,22 @@ public:
         mHandle.pushDataEXT(pushDataInfo);
     }
 
+    void dispatch(const uint32_t x = 1, const uint32_t y = 1, const uint32_t z = 1) const
+    {
+        mHandle.dispatch(x, y, z);
+    }
+
+    void dispatchIndirect(const Buffer* pBuffer) const
+    {
+        mHandle.dispatchIndirect(pBuffer->getHandle(), 0);
+    }
+
     void drawMeshTasks(const uint32_t x = 1, const uint32_t y = 1, const uint32_t z = 1) const
     {
         mHandle.drawMeshTasksEXT(x, y, z);
     }
+
+    void blitToSwapchain(Texture* pSrc, const Swapchain* pSwapchain, uint32_t acquiredIndex) const;
 
 private:
     vk::CommandBuffer mHandle;

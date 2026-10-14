@@ -689,3 +689,36 @@ PipelineBase::LoadedShader PipelineBase::loadShader(const ShaderInfo& shaderInfo
 }
 
 #pragma endregion
+
+void CommandList::blitToSwapchain(Texture* pSrc, const Swapchain* pSwapchain, const uint32_t acquiredIndex) const
+{
+    auto* pDst = pSwapchain->getTexture(acquiredIndex);
+    Barrier()
+        .addBarrier(pSrc->getBarrier(ImageUsage::TransferSrc))
+        .addBarrier(pDst->getBarrier(ImageUsage::TransferDst))
+        .insert(this);
+
+    const auto srcExtent = pSrc->size;
+    const auto dstExtent = pDst->size;
+    const auto region  = vk::ImageBlit2()
+        .setSrcOffsets({
+            vk::Offset3D { 0, 0, 0 },
+            vk::Offset3D { static_cast<int32_t>(srcExtent.width), static_cast<int32_t>(srcExtent.height), 1 }
+        })
+        .setSrcSubresource(pSrc->getSubresourceLayers())
+        .setDstOffsets({
+            vk::Offset3D { 0, 0, 0 },
+            vk::Offset3D { static_cast<int32_t>(dstExtent.width), static_cast<int32_t>(dstExtent.height), 1 }
+        })
+        .setDstSubresource({ vk::ImageAspectFlagBits::eColor, 0, 0, 1 });
+
+    const auto blit = vk::BlitImageInfo2()
+        .setSrcImage(pSrc->getHandle())
+        .setSrcImageLayout(vk::ImageLayout::eGeneral)
+        .setDstImage(pDst->getHandle())
+        .setDstImageLayout(vk::ImageLayout::eGeneral)
+        .setFilter(vk::Filter::eLinear)
+        .setRegions(region);
+
+    mHandle.blitImage2(blit);
+}

@@ -1,13 +1,6 @@
 #pragma once
 
-#include <array>
-#include <ranges>
-#include <imgui.h>
-#include <glm/glm.hpp>
-#include <glm/gtx/euler_angles.hpp>
-
 #include "Hair/HairBuffers.hpp"
-#include "Hair/HairGeometry.hpp"
 #include "Hair/HairRendererParams.hpp"
 #include "VulkanRHI/VulkanRHI.hpp"
 

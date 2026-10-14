@@ -7,6 +7,7 @@
 #include "Hair/HairGeometry.hpp"
 #include "Hair/HairRendererParams.hpp"
 #include "Hair/Baseline/BaselinePass.hpp"
+#include "Hair/TwoPassHybrid/TwoPassHybrid.hpp"
 #include "VulkanRHI/VulkanRHI.hpp"
 
 class Application
@@ -42,6 +43,7 @@ private:
     std::unique_ptr<GPUProfiler>            mProfiler;
     std::unique_ptr<HairRendererParams>     mHairRendererParams;
     std::unique_ptr<BaselinePass>           mBaselinePass;
+    std::unique_ptr<TwoPassHybrid>          mTwoPassHybrid;
 };
 
 extern Application* gApplication;

@@ -40,6 +40,7 @@ Application::Application()
     mProfiler = std::make_unique<GPUProfiler>(mVulkanRHI.get());
     mHairRendererParams = std::make_unique<HairRendererParams>(&mHairGeometry);
     mBaselinePass = std::make_unique<BaselinePass>(mHairRendererParams.get(), mVulkanRHI.get());
+    mTwoPassHybrid = std::make_unique<TwoPassHybrid>(mHairRendererParams.get(), mVulkanRHI.get());
 
     SDL_ShowWindow(mWindow);
 }
@@ -117,7 +118,8 @@ void Application::run()
 
         mProfiler->beginQuery(pCommandList, frame.currentFrame);
         {
-            mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
+            //mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
+            mTwoPassHybrid->render(frame, hairBuffers);
         }
         mProfiler->endQuery(pCommandList, frame.currentFrame);
 

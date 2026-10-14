@@ -34,10 +34,18 @@ struct HairRendererParams
 {
     HairGeometry*   mHairGeometry = nullptr;
 
+    // Geometry visualization mode
     HairVisMode     mColorMode      = HairVisMode::Model;
+
+    // Strand count override
     int32_t         mStrandCount    = 0;
+
+    // Thickness override
     bool            mForceThickness = false;
     float           mThickness      = 0.25f;
+
+    // Hybrid renderer small triangle classification
+    float           mTriThreshold = 4.0f;
 
     explicit HairRendererParams(HairGeometry* pHairGeometry)
     : mHairGeometry(pHairGeometry)
@@ -95,6 +103,9 @@ struct HairRendererParams
         ImGui::Checkbox("Force", &mForceThickness);
         ImGui::SameLine();
         ImGui::DragFloat("##Thickness", &mThickness, 0.05f, 0.0f, 1.0f);
+
+        ImGui::SeparatorText("Triangle Threshold");
+        ImGui::DragFloat("Area", &mTriThreshold, 0.05f, 0.0f, 8.0f);
 
         ImGui::End();
     }
