@@ -143,6 +143,7 @@ public:
             .setPNext(&meshShader);
         auto dheap = vk::PhysicalDeviceDescriptorHeapFeaturesEXT()
             .setDescriptorHeap(true)
+            .setDescriptorHeapCaptureReplay(true)
             .setPNext(&scmt1);
         auto unified = vk::PhysicalDeviceUnifiedImageLayoutsFeaturesKHR()
             .setUnifiedImageLayouts(true)
@@ -150,6 +151,9 @@ public:
         auto deviceFault = vk::PhysicalDeviceFaultFeaturesEXT()
             .setDeviceFault(true)
             .setPNext(&unified);
+        auto mt8 = vk::PhysicalDeviceMaintenance8FeaturesKHR()
+            .setMaintenance8(true)
+            .setPNext(&deviceFault);
         const auto features = vk::PhysicalDeviceFeatures()
             .setMultiDrawIndirect(true)
             .setFragmentStoresAndAtomics(true)
@@ -170,6 +174,7 @@ public:
             vk::EXTMeshShaderExtensionName,
             vk::EXTDeviceFaultExtensionName,
             vk::EXTDescriptorHeapExtensionName,
+            vk::KHRMaintenance8ExtensionName,
         };
 
         constexpr float queuePriority = 1.0f;
@@ -199,7 +204,7 @@ public:
             .setQueueCreateInfoCount(queueCreateInfos.size())
             .setPQueueCreateInfos(queueCreateInfos.data())
             .setPEnabledFeatures(&features)
-            .setPNext(&deviceFault);
+            .setPNext(&mt8);
 
         mDevice = mPhysicalDevice.createDevice(createInfo);
 
@@ -1113,6 +1118,8 @@ public:
     {
         mHandle.drawMeshTasksEXT(x, y, z);
     }
+
+    void copyImage(Texture* pSrc, Texture* pDst) const;
 
     void blitToSwapchain(Texture* pSrc, const Swapchain* pSwapchain, uint32_t acquiredIndex) const;
 

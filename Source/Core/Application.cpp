@@ -118,8 +118,17 @@ void Application::run()
 
         mProfiler->beginQuery(pCommandList, frame.currentFrame);
         {
-            //mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
-            mTwoPassHybrid->render(frame, hairBuffers);
+            switch (mHairRendererParams->mActiveRenderer)
+            {
+                case 1: {
+                    mTwoPassHybrid->render(frame, hairBuffers);
+                    break;
+                }
+                default: {
+                    mBaselinePass->render(frame, hairBuffers, mDepthBuffers[frame.currentFrame].get());
+                    break;
+                }
+            }
         }
         mProfiler->endQuery(pCommandList, frame.currentFrame);
 
@@ -137,7 +146,7 @@ void Application::run()
                 {
                     ImGui::Begin("Benchmark");
                     {
-                        ImGui::Text("Pipeline time: %f", mProfiler->lastGpuMS);
+                        ImGui::Text("Pipeline time: %f ms", mProfiler->lastGpuMS);
                         ImGui::Text("Primitives: %llu", mProfiler->lastMeshPrims);
 
                         ImGui::BeginDisabled(mProfiler->isCapturing());

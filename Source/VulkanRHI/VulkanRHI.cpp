@@ -39,6 +39,8 @@ Buffer::Buffer(const Builder& b, const std::shared_ptr<Device>& device)
 
     const auto addressInfo = vk::BufferDeviceAddressInfo().setBuffer(mBuffer);
     mAddress = mDevice->getHandle().getBufferAddress(&addressInfo);
+
+    mDevice->setLabel(mBuffer, label);
 }
 
 vk::BufferUsageFlags Buffer::getBufferUsageFlags(const BufferType bufferType) noexcept
@@ -689,6 +691,33 @@ PipelineBase::LoadedShader PipelineBase::loadShader(const ShaderInfo& shaderInfo
 }
 
 #pragma endregion
+
+void CommandList::copyImage(Texture* pSrc, Texture* pDst) const
+{
+    Barrier()
+        .addBarrier(pSrc->getBarrier(ImageUsage::TransferSrc))
+        .addBarrier(pDst->getBarrier(ImageUsage::TransferDst))
+        .insert(this);
+
+    const auto [ srcW, srcH ] = pSrc->size;
+    const auto [ dstW, dstH ] = pDst->size;
+    assert(srcW == dstW && srcH == dstH);
+
+    const auto region  = vk::ImageCopy2()
+        .setExtent({ srcW, srcH, 1 })
+        .setSrcOffset(vk::Offset3D { 0, 0, 0 })
+        .setSrcSubresource(pSrc->getSubresourceLayers())
+        .setDstOffset(vk::Offset3D { 0, 0, 0 })
+        .setDstSubresource(pDst->getSubresourceLayers());
+    const auto copy = vk::CopyImageInfo2()
+        .setSrcImage(pSrc->getHandle())
+        .setSrcImageLayout(vk::ImageLayout::eGeneral)
+        .setDstImage(pDst->getHandle())
+        .setDstImageLayout(vk::ImageLayout::eGeneral)
+        .setRegions(region);
+
+    mHandle.copyImage2(copy);
+}
 
 void CommandList::blitToSwapchain(Texture* pSrc, const Swapchain* pSwapchain, const uint32_t acquiredIndex) const
 {

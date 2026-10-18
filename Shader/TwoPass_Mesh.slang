@@ -9,10 +9,11 @@ struct PushConstants
     HairAttributes*      attributes;
     HairStrandDesc*      strandDescriptions;
     GPUCameraData*       camera;
-    ScreenSpaceTriangle* trangles;
+    ScreenSpaceTriangle* triangles;
     uint*                triangleCount;
     uint                 strandCount;
     uint                 colorMode;
+    uint                 maxTriCount;
     float2               viewport;
     float                threshold;
 
@@ -131,9 +132,11 @@ void meshMain(
     float4 clipB     = mul(VP, B);
     float4 clipNextB = float4(0.0);
 
+    float3 color = getVertexColor(strandId, strandletId, vertexBufferOffset);
+
     bool isSmallTri0 = false;
     bool isSmallTri1 = false;
-    if (!isStrandEnd)
+    if (!isStrandEnd && laneId < quadCount)
     {
         const uint nextOffset = vertexBufferOffset + 1;
         float4 wNextPos       = mul(pc.model, float4(pc.vertices[nextOffset].position, 1.0));
@@ -152,17 +155,38 @@ void meshMain(
         isSmallTri0 = isSmallTriangle(sA, sB, sa, pc.threshold);
         isSmallTri1 = isSmallTriangle(sB, sb, sa, pc.threshold);
 
+        uint basePrimitiveId = (strandId << 13) | (strandletId << 7) | (laneId * 2);
+
         if (isSmallTri0)
         {
-
+            appendTriangle(
+                float3(sA, clipA.z     / clipA.w    ),
+                float3(sB, clipB.z     / clipB.w    ),
+                float3(sa, clipNextA.z / clipNextA.w),
+                worldTangent,
+                color,
+                basePrimitiveId + 0,
+                pc.maxTriCount,
+                pc.triangleCount,
+                pc.triangles
+            );
         }
         if (isSmallTri1)
         {
-
+            appendTriangle(
+                float3(sB, clipB.z     / clipB.w    ),
+                float3(sb, clipNextB.z / clipNextB.w),
+                float3(sa, clipNextA.z / clipNextA.w),
+                worldTangent,
+                color,
+                basePrimitiveId + 1,
+                pc.maxTriCount,
+                pc.triangleCount,
+                pc.triangles
+            );
         }
     }
 
-    float3 color = getVertexColor(strandId, strandletId, vertexBufferOffset);
     verts[outOffset + 0] = { clipA, A.xyz, worldTangent, color };
     verts[outOffset + 1] = { clipB, B.xyz, worldTangent, color };
 
@@ -192,4 +216,3 @@ float4 fragMain(MeshVertex input) : SV_Target
 
     return float4(color, 1.0);
 }
-

@@ -12,7 +12,6 @@
 struct GpuScreenSpaceTriangle
 {
     glm::vec3 v0, v1, v2;
-    glm::vec3 w0, w1, w2;
     glm::vec3 tangent;
     glm::vec3 color;
     uint32_t  primitiveId;
@@ -46,15 +45,15 @@ public:
             const auto pipelineInfo = PipelineCommon()
                 .setLabel("TwoPass_PrepareIndirect")
                 .addShader("TwoPass_PrepareIndirect.comp.spv");
-            // mPrepareIndirectPipeline = std::make_unique<ComputePipeline>(pipelineInfo, mVulkanRHI->getDevice());
+            mPrepareIndirectPipeline = std::make_unique<ComputePipeline>(pipelineInfo, mVulkanRHI->getDevice());
         }
 
         /* Software Rasterizer Pipeline */
         {
             const auto pipelineInfo = PipelineCommon()
                 .setLabel("TwoPass_Rasterizer")
-                .addShader("TwoPass_Rasterizer.comp.spv");
-            // mComputePipeline = std::make_unique<ComputePipeline>(pipelineInfo, mVulkanRHI->getDevice());
+                .addShader("TwoPass_Compute.comp.spv");
+            mComputePipeline = std::make_unique<ComputePipeline>(pipelineInfo, mVulkanRHI->getDevice());
         }
 
         mDescriptorHeap = std::make_unique<DescriptorHeap>(mVulkanRHI->getDevice(), "TwoPass_DescriptorHeap");
@@ -76,6 +75,12 @@ public:
                 .setLabel(fmt::format("TwoPass_Depth_{}", i))
                 .create(mVulkanRHI->getDevice());
 
+            mSoftwareDepthBuffers[i] = Texture::Builder()
+                .setFormat(vk::Format::eR32Uint)
+                .setSize(mVulkanRHI->getRenderResolution())
+                .setLabel(fmt::format("TwoPass_SoftwareDepth_{}", i))
+                .create(mVulkanRHI->getDevice());
+
             mTriangleDataBuffers[i] = Buffer::Builder()
                 .setSize(triDataSize)
                 .setType(BufferType::Storage)
@@ -95,7 +100,7 @@ public:
                 .create(mVulkanRHI->getDevice());
 
             mDescriptorHeap->writeStorageImage((i * 2) + 0, mRenderTarget[i].get());
-            mDescriptorHeap->writeStorageImage((i * 2) + 1, mDepthBuffers[i].get());
+            mDescriptorHeap->writeStorageImage((i * 2) + 1, mSoftwareDepthBuffers[i].get());
         }
     }
 
@@ -105,7 +110,7 @@ public:
 
         clearCounterBuffer(frame);
         dispatchMesh(frame, buffers);
-        // dispatchCompute(frame, buffers);
+        dispatchCompute(frame, buffers);
 
         frame.pCommandList->blitToSwapchain(mRenderTarget[frame.currentFrame].get(), mVulkanRHI->getSwapchain(), frame.acquiredIndex);
     }
@@ -149,6 +154,7 @@ private:
                     uint64_t    pTriCount;
                     uint32_t    strandCount;
                     uint32_t    colorMode;
+                    uint32_t    maxTriCount;
                     glm::vec2   viewport;
                     float       threshold;
                 } pushData = {
@@ -158,6 +164,7 @@ private:
                     .pTriCount   = pTriCount->getAddress(),
                     .strandCount = static_cast<uint32_t>(mParams->mStrandCount),
                     .colorMode   = std::to_underlying(mParams->mColorMode),
+                    .maxTriCount = static_cast<uint32_t>(pTriData->size / sizeof(GpuScreenSpaceTriangle)),
                     .viewport    = glm::vec2(w, h),
                     .threshold   = mParams->mTriThreshold,
                 };
@@ -202,31 +209,36 @@ private:
             pCmd->dispatch();
         }
 
+        /* Prepare Software Depth */
+        pCmd->copyImage(mDepthBuffers[frame.currentFrame].get(), mSoftwareDepthBuffers[frame.currentFrame].get());
+
         /* Rasterizer */
         {
             Barrier()
                 .addBarrier(pTriData->getBarrier(Compute_Write, Compute_Read))
                 .addBarrier(pArgs->getBarrier(Compute_Write, DrawIndirect))
                 .addBarrier(mRenderTarget[frame.currentFrame]->getBarrier(ImageUsage::StorageImage))
-                .addBarrier(mDepthBuffers[frame.currentFrame]->getBarrier(ImageUsage::StorageImage))
+                .addBarrier(mSoftwareDepthBuffers[frame.currentFrame]->getBarrier(ImageUsage::StorageImage))
                 .insert(pCmd);
 
             const auto [w, h] = mVulkanRHI->getRenderResolution();
             const struct
             {
                 HairBuffers buffers;
-                uint64_t    pTriCount;
                 uint64_t    pTriData;
+                uint64_t    pTriCount;
                 glm::vec2   viewportSize;
-                uint32_t    renderTarget;
-                uint32_t    depthBuffer;
+                glm::uvec2  renderTarget;
+                glm::uvec2  depthBuffer;
+                uint32_t    colorMode;
             } pushData = {
                 .buffers      = buffers,
-                .pTriCount    = pTriCount->getAddress(),
                 .pTriData     = pTriData->getAddress(),
+                .pTriCount    = pTriCount->getAddress(),
                 .viewportSize = glm::vec2(w, h),
-                .renderTarget = static_cast<uint32_t>(frame.currentFrame * 2) + 0,
-                .depthBuffer  = static_cast<uint32_t>(frame.currentFrame * 2) + 1,
+                .renderTarget = { static_cast<uint32_t>(frame.currentFrame * 2) + 0, 0 },
+                .depthBuffer  = { static_cast<uint32_t>(frame.currentFrame * 2) + 1, 0 },
+                .colorMode    = std::to_underlying(mParams->mColorMode),
             };
 
             pCmd->bindPipeline(mComputePipeline.get());
@@ -246,6 +258,7 @@ private:
 
     PerFrameArray<std::unique_ptr<Texture>> mRenderTarget;
     PerFrameArray<std::unique_ptr<Texture>> mDepthBuffers;
+    PerFrameArray<std::unique_ptr<Texture>> mSoftwareDepthBuffers;
 
     PerFrameArray<std::unique_ptr<Buffer>>  mIndirectArgsBuffers;
 

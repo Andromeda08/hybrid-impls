@@ -100,6 +100,7 @@ enum ColorMode : uint
     Strand    = 1,
     Strandlet = 2,
     Quad      = 3,
+    Compute   = 4,
 }
 
 static const uint nbl_VizColorCount = 12;
@@ -173,11 +174,112 @@ float3 kajiyaKay(float3 diffuse, float3 specular, float p, float3 T, float3 L, f
     return d + s;
 }
 
+float getSignedArea(float2 a, float2 b, float2 c)
+{
+    float2 AB = float2(b.x - a.x, b.y - a.y);
+    float2 AC = float2(c.x - a.x, c.y - a.y);
+    return 0.5 * determinant(float2x2(AB, AC));
+}
+
 struct ScreenSpaceTriangle
 {
     float3 v0, v1, v2;
-    float3 w0, w1, w2;
     float3 tangent;
     float3 color;
     uint   primitiveId;
+};
+
+void appendTriangle(
+    float3 sd0, float3 sd1, float3 sd2, float3 tangent, float3 color, uint primId,
+    uint maxCount, uint* pCounter, ScreenSpaceTriangle* pTarget
+)
+{
+    uint slot;
+    InterlockedAdd(*pCounter, 1, slot);
+    if (slot >= maxCount) { return; }
+
+    ScreenSpaceTriangle tri;
+    tri.v0 = sd0; tri.v1 = sd1; tri.v2 = sd2;
+    tri.tangent = tangent;
+    tri.color = color;
+    tri.primitiveId = primId;
+
+    pTarget[slot] = tri;
+}
+
+struct BBoxInt2
+{
+    int2 bboxMin;
+    int2 bboxMax;
+
+    bool isEmpty()
+    {
+        return any(bboxMin > bboxMax);
+    }
+
+    static BBoxInt2 fromTriangle(float2 p0, float2 p1, float2 p2)
+    {
+        float2 _min = min(min(p0, p1), p2);
+        float2 _max = max(max(p0, p1), p2);
+
+        BBoxInt2 result;
+        result.bboxMin = int2(floor(_min - 0.5)) + 1;
+        result.bboxMax = int2(floor(_max - 0.5));
+        return result;
+    }
+
+    static BBoxInt2 fromScissor(uint xmin, uint ymin, uint xmax, uint ymax)
+    {
+        BBoxInt2 result;
+        result.bboxMin = int2(xmin, ymin);
+        result.bboxMax = int2(xmax, ymax);
+        return result;
+    }
+
+    BBoxInt2 getClippedBy(BBoxInt2 other)
+    {
+        BBoxInt2 result;
+        result.bboxMin = max(bboxMin, other.bboxMin);
+        result.bboxMax = min(bboxMax, other.bboxMax);
+        return result;
+    }
+};
+
+struct Triangle
+{
+    float2   p0, p1, p2;
+
+    BBoxInt2 bounds;
+    float    signedArea;
+    float    invArea;
+    float    s;
+
+    static Triangle fromInput(ScreenSpaceTriangle t)
+    {
+        Triangle tri;
+
+        tri.p0 = t.v0.xy;
+        tri.p1 = t.v1.xy;
+        tri.p2 = t.v2.xy;
+
+        tri.bounds     = BBoxInt2::fromTriangle(tri.p0, tri.p1, tri.p2);
+        tri.signedArea = getSignedArea(tri.p0, tri.p1, tri.p2);
+        tri.invArea    = 1.0f / tri.signedArea;
+        tri.s          = sign(tri.signedArea);
+
+        return tri;
+    }
+
+    bool isDegenerate()
+    {
+        return abs(signedArea) < 0.0000005;
+    }
+
+    float3 bary(float2 p)
+    {
+        float w0 = getSignedArea(p1, p2, p);
+        float w1 = getSignedArea(p2, p0, p);
+        float w2 = getSignedArea(p0, p1, p);
+        return float3(w0, w1, w2) * invArea;
+    }
 };

@@ -15,6 +15,7 @@ enum class HairVisMode : uint32_t
     Strand      = 1,
     Strandlet   = 2,
     Quad        = 3,
+    Compute     = 4,
 };
 
 [[nodiscard]] constexpr std::string_view toString(const HairVisMode e) noexcept
@@ -26,12 +27,14 @@ enum class HairVisMode : uint32_t
         case Strand:    return "Strand";
         case Strandlet: return "Strandlet";
         case Quad:      return "Quad";
+        case Compute:   return "Compute";
     }
     std::unreachable();
 }
 
 struct HairRendererParams
 {
+    uint32_t        mActiveRenderer = 0;
     HairGeometry*   mHairGeometry = nullptr;
 
     // Geometry visualization mode
@@ -57,10 +60,28 @@ struct HairRendererParams
     {
         using enum HairVisMode;
         static constexpr std::array sVisModeNames = {
-            toString(Model), toString(Strand), toString(Strandlet), toString(Quad)
+            toString(Model), toString(Strand), toString(Strandlet), toString(Quad), toString(Compute),
         };
 
         ImGui::Begin("Hair Renderer");
+
+        static constexpr std::array sRendererNames = { "Baseline", "TwoPass Hybrid" };
+        if (ImGui::BeginCombo("##RendererSelect", sRendererNames[mActiveRenderer]))
+        {
+            for (auto&& [i, name] : std::views::enumerate(sRendererNames))
+            {
+                const bool isSelected = mActiveRenderer == i;
+                if (ImGui::Selectable(name, isSelected))
+                {
+                    mActiveRenderer = i;
+                }
+                if (isSelected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
 
         ImGui::SeparatorText("Hair Stats");
         ImGui::Text("Vertices   : %u", mHairGeometry->getVertexCount());
