@@ -28,14 +28,14 @@ public:
         {
             const auto graphicsPS = GraphicsPS()
                 .addDefaultAttachmentState(1)
-                .addAttachmentFormat(vk::Format::eR32G32B32A32Sfloat)
+                .addAttachmentFormat(vk::Format::eR16G16B16A16Sfloat)
                 .addAttachmentFormat(vk::Format::eD32Sfloat)
                 .setCullMode(vk::CullModeFlagBits::eNone);
             const auto pipelineInfo = PipelineCommon()
                 .setLabel("TwoPass_Mesh")
-                .addShader("TwoPass_Mesh.task.spv")
-                .addShader("TwoPass_Mesh.mesh.spv")
-                .addShader("TwoPass_Mesh.frag.spv");
+                .addShader("TwoPass_Mesh_Opt.task.spv")
+                .addShader("TwoPass_Mesh_Opt.mesh.spv")
+                .addShader("TwoPass_Mesh_Opt.frag.spv");
 
             mMeshPipeline = std::make_unique<GraphicsPipeline>(graphicsPS, pipelineInfo, mVulkanRHI->getDevice());
         }
@@ -64,7 +64,7 @@ public:
         for (uint32_t i = 0; i < gFramesInFlight; i++)
         {
             mRenderTarget[i] = Texture::Builder()
-                .setFormat(vk::Format::eR32G32B32A32Sfloat)
+                .setFormat(vk::Format::eR16G16B16A16Sfloat)
                 .setSize(mVulkanRHI->getRenderResolution())
                 .setLabel(fmt::format("TwoPass_Target_{}", i))
                 .create(mVulkanRHI->getDevice());

@@ -45,6 +45,7 @@ add_executable(exec
     Source/Hair/Baseline/BaselinePass.cpp
     Source/Core/GPUProfiler.hpp
     Source/Hair/TwoPassHybrid/TwoPassHybrid.hpp
+    Source/Hair/CombinedHybrid/CombinedHybrid.hpp
 )
 
 target_link_libraries(exec PUBLIC

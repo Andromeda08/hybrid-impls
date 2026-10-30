@@ -16,6 +16,7 @@ struct GPUCameraData
 {
     glm::mat4 view;
     glm::mat4 proj;
+    glm::mat4 viewProj;
     glm::mat4 viewInverse;
     glm::mat4 projInverse;
     glm::vec4 eye;
@@ -44,6 +45,7 @@ public:
         return {
             .view        = mView,
             .proj        = mProj,
+            .viewProj    = mProj * mView,
             .viewInverse = glm::inverse(mView),
             .projInverse = glm::inverse(mProj),
             .eye         = getEye(),

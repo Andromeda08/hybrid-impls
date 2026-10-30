@@ -41,11 +41,27 @@ void ShaderBuild::createSlangSession()
 {
     slang::createGlobalSession(mGlobalSession.writeRef());
 
-    slang::CompilerOptionEntry capability = {
-        .name  = slang::CompilerOptionName::Capability,
-        .value = {
-            .kind = slang::CompilerOptionValueKind::Int,
-            .intValue0 = mGlobalSession->findCapability("spvDescriptorHeapEXT")
+    const std::array options = {
+        slang::CompilerOptionEntry {
+            .name  = slang::CompilerOptionName::Capability,
+            .value = {
+                .kind = slang::CompilerOptionValueKind::Int,
+                .intValue0 = mGlobalSession->findCapability("spvDescriptorHeapEXT")
+            },
+        },
+        slang::CompilerOptionEntry {
+            .name  = slang::CompilerOptionName::DebugInformation,
+            .value = {
+                .kind = slang::CompilerOptionValueKind::Int,
+                .intValue0 = SLANG_DEBUG_INFO_LEVEL_STANDARD,
+            },
+        },
+        slang::CompilerOptionEntry {
+            .name  = slang::CompilerOptionName::DefaultImageFormatUnknown,
+            .value = {
+                .kind = slang::CompilerOptionValueKind::Int,
+                .intValue0 = 1,
+            },
         },
     };
 
@@ -54,8 +70,8 @@ void ShaderBuild::createSlangSession()
         .profile                     = mGlobalSession->findProfile("spirv_1_6"),
         .flags                       = SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY,
         .forceGLSLScalarBufferLayout = true,
-        .compilerOptionEntries       = &capability,
-        .compilerOptionEntryCount    = 1,
+        .compilerOptionEntries       = options.data(),
+        .compilerOptionEntryCount    = options.size(),
     };
 
     std::vector<slang::PreprocessorMacroDesc> macros = {};

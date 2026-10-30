@@ -47,8 +47,9 @@ struct HairRendererParams
     bool            mForceThickness = false;
     float           mThickness      = 0.25f;
 
-    // Hybrid renderer small triangle classification
-    float           mTriThreshold = 4.0f;
+    // Hybrid renderer classification
+    float           mTriThreshold  = 4.0f;
+    float           mLineThreshold = 0.5f;
 
     explicit HairRendererParams(HairGeometry* pHairGeometry)
     : mHairGeometry(pHairGeometry)
@@ -65,7 +66,7 @@ struct HairRendererParams
 
         ImGui::Begin("Hair Renderer");
 
-        static constexpr std::array sRendererNames = { "Baseline", "TwoPass Hybrid" };
+        static constexpr std::array sRendererNames = { "Baseline", "Two-Pass Hybrid", "Combined Hybrid", "Combined Hybrid V2" };
         if (ImGui::BeginCombo("##RendererSelect", sRendererNames[mActiveRenderer]))
         {
             for (auto&& [i, name] : std::views::enumerate(sRendererNames))
@@ -84,8 +85,8 @@ struct HairRendererParams
         }
 
         ImGui::SeparatorText("Hair Stats");
-        ImGui::Text("Vertices   : %u", mHairGeometry->getVertexCount());
-        ImGui::Text("Strands    : %u", mHairGeometry->getStrandCount());
+        ImGui::Text("Vertices   : %u",   mHairGeometry->getVertexCount());
+        ImGui::Text("Strands    : %u",   mHairGeometry->getStrandCount());
         ImGui::Text("Strandlets : %llu", mHairGeometry->strandlets.size());
 
         ImGui::SeparatorText("Strand Count");
@@ -127,6 +128,10 @@ struct HairRendererParams
 
         ImGui::SeparatorText("Triangle Threshold");
         ImGui::DragFloat("Area", &mTriThreshold, 0.05f, 0.0f, 8.0f);
+
+        ImGui::SeparatorText("Line Threshold");
+        ImGui::DragFloat("Width", &mLineThreshold, 0.025f, 0.0f, 2.0f);
+
 
         ImGui::End();
     }

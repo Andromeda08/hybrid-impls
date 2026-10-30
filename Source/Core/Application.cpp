@@ -37,10 +37,12 @@ Application::Application()
     loadHairFile("a_wWavy");
     initImGui();
 
-    mProfiler = std::make_unique<GPUProfiler>(mVulkanRHI.get());
+    mProfiler           = std::make_unique<GPUProfiler>(mVulkanRHI.get());
     mHairRendererParams = std::make_unique<HairRendererParams>(&mHairGeometry);
-    mBaselinePass = std::make_unique<BaselinePass>(mHairRendererParams.get(), mVulkanRHI.get());
-    mTwoPassHybrid = std::make_unique<TwoPassHybrid>(mHairRendererParams.get(), mVulkanRHI.get());
+    mBaselinePass       = std::make_unique<BaselinePass>(mHairRendererParams.get(), mVulkanRHI.get());
+    mTwoPassHybrid      = std::make_unique<TwoPassHybrid>(mHairRendererParams.get(), mVulkanRHI.get());
+    mCombinedHybrid     = std::make_unique<CombinedHybrid>(mHairRendererParams.get(), mVulkanRHI.get());
+    mCombinedHybridV2   = std::make_unique<CombinedHybridV2>(mHairRendererParams.get(), mVulkanRHI.get());
 
     SDL_ShowWindow(mWindow);
 }
@@ -122,6 +124,14 @@ void Application::run()
             {
                 case 1: {
                     mTwoPassHybrid->render(frame, hairBuffers);
+                    break;
+                }
+                case 2: {
+                    mCombinedHybrid->render(frame, hairBuffers);
+                    break;
+                }
+                case 3: {
+                    mCombinedHybridV2->render(frame, hairBuffers);
                     break;
                 }
                 default: {

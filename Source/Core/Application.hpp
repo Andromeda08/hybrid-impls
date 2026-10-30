@@ -7,6 +7,8 @@
 #include "Hair/HairGeometry.hpp"
 #include "Hair/HairRendererParams.hpp"
 #include "Hair/Baseline/BaselinePass.hpp"
+#include "Hair/CombinedHybrid/CombinedHybrid.hpp"
+#include "Hair/CombinedHybrid/CombinedHybridV2.hpp"
 #include "Hair/TwoPassHybrid/TwoPassHybrid.hpp"
 #include "VulkanRHI/VulkanRHI.hpp"
 
@@ -44,6 +46,8 @@ private:
     std::unique_ptr<HairRendererParams>     mHairRendererParams;
     std::unique_ptr<BaselinePass>           mBaselinePass;
     std::unique_ptr<TwoPassHybrid>          mTwoPassHybrid;
+    std::unique_ptr<CombinedHybrid>         mCombinedHybrid;
+    std::unique_ptr<CombinedHybridV2>       mCombinedHybridV2;
 };
 
 extern Application* gApplication;

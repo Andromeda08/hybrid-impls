@@ -115,6 +115,7 @@ public:
             .setDescriptorIndexing(true)
             .setScalarBlockLayout(true)
             .setShaderInt8(true)
+            .setShaderBufferInt64Atomics(true)
             .setTimelineSemaphore(true)
             .setHostQueryReset(true)
             .setScalarBlockLayout(true)
@@ -151,9 +152,15 @@ public:
         auto deviceFault = vk::PhysicalDeviceFaultFeaturesEXT()
             .setDeviceFault(true)
             .setPNext(&unified);
+        auto shaderAbort = vk::PhysicalDeviceShaderAbortFeaturesKHR()
+            .setShaderAbort(true)
+            .setPNext(&deviceFault);
+        auto shaderImage64atomics = vk::PhysicalDeviceShaderImageAtomicInt64FeaturesEXT()
+            .setShaderImageInt64Atomics(true)
+            .setPNext(&shaderAbort);
         auto mt8 = vk::PhysicalDeviceMaintenance8FeaturesKHR()
             .setMaintenance8(true)
-            .setPNext(&deviceFault);
+            .setPNext(&shaderImage64atomics);
         const auto features = vk::PhysicalDeviceFeatures()
             .setMultiDrawIndirect(true)
             .setFragmentStoresAndAtomics(true)
@@ -175,6 +182,8 @@ public:
             vk::EXTDeviceFaultExtensionName,
             vk::EXTDescriptorHeapExtensionName,
             vk::KHRMaintenance8ExtensionName,
+            vk::KHRShaderAbortExtensionName,
+            vk::EXTShaderImageAtomicInt64ExtensionName,
         };
 
         constexpr float queuePriority = 1.0f;
